@@ -1,0 +1,40 @@
+# Claude Code documentation
+CLAUDE.md
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Go test artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependencies
+vendor/
+
+# Docker volumes
+**/mongo_data/
+**/solr_data/
