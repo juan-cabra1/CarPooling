@@ -1,0 +1,1001 @@
+================================================================================
+                    PLAN DE IMPLEMENTACIÓN - BOOKINGS-API
+          Sistema de Carpooling UCC - Arquitectura de Microservicios
+================================================================================
+
+OBJETIVO: Crear el microservicio bookings-api (reservations-api) siguiendo
+         la misma estructura, patrones y convenciones de users-api
+
+CARACTERÍSTICAS PRINCIPALES:
+- Gestión transaccional de reservas (ACID)
+- Proceso concurrente con Goroutines + Channels
+- Validación de disponibilidad contra trips-api
+- Sistema de confirmación de llegada
+- Integración con RabbitMQ para eventos
+
+================================================================================
+1. ESTRUCTURA DE DIRECTORIOS
+================================================================================
+
+bookings-api/
+├── cmd/
+│   └── api/
+│       └── main.go                    # Entry point - inicialización
+│
+├── internal/
+│   ├── config/
+│   │   └── config.go                  # Configuración desde .env
+│   │
+│   ├── controller/
+│   │   └── booking.go                 # Controlador HTTP de reservas
+│   │
+│   ├── dao/
+│   │   └── booking.go                 # Modelo de base de datos
+│   │
+│   ├── domain/
+│   │   └── booking.go                 # DTOs y entidades de dominio
+│   │
+│   ├── repository/
+│   │   └── booking.go                 # Capa de acceso a datos
+│   │
+│   ├── service/
+│   │   ├── booking.go                 # Lógica de negocio principal
+│   │   ├── validation.go              # Servicio de validaciones concurrentes
+│   │   ├── trips_client.go            # Cliente HTTP para trips-api
+│   │   ├── users_client.go            # Cliente HTTP para users-api
+│   │   ├── rabbitmq.go                # Cliente RabbitMQ para eventos
+│   │   └── booking_test.go            # Tests unitarios
+│   │
+│   ├── middleware/
+│   │   ├── auth.go                    # Validación JWT (copiado de users-api)
+│   │   ├── cors.go                    # CORS (copiado de users-api)
+│   │   └── error.go                   # Manejo de errores global
+│   │
+│   └── routes/
+│       └── routes.go                  # Definición de rutas
+│
+├── Dockerfile                          # Contenedor Docker
+├── .env                               # Variables de entorno
+├── go.mod                             # Dependencias Go
+└── go.sum                             # Checksums
+
+
+================================================================================
+2. MODELO DE DATOS - BOOKING DAO
+================================================================================
+
+Tabla: reservations (MySQL - Schema: carpooling_reservations)
+
+Campos:
+- id (VARCHAR(36), PK, UUID)
+- trip_id (VARCHAR(24), NOT NULL, indexed)      # ObjectID de MongoDB
+- passenger_id (BIGINT, NOT NULL, indexed)      # Usuario pasajero
+- driver_id (BIGINT, NOT NULL, indexed)         # Usuario conductor
+- seats_reserved (INT, NOT NULL)                # Cantidad de asientos
+- price_per_seat (DECIMAL(10,2), NOT NULL)      # Precio por asiento
+- total_amount (DECIMAL(10,2), NOT NULL)        # Total a pagar
+- status (ENUM: pending, confirmed, completed, cancelled)
+- payment_status (ENUM: pending, paid, refunded)
+- arrived_safely (BOOLEAN, DEFAULT FALSE)       # Confirmación de llegada
+- arrival_confirmed_at (TIMESTAMP, NULL)        # Fecha de confirmación
+- created_at (TIMESTAMP, auto-created)
+- updated_at (TIMESTAMP, auto-updated)
+
+Índices:
+- UNIQUE KEY: (trip_id, passenger_id)          # No duplicados
+- INDEX: trip_id
+- INDEX: passenger_id
+- INDEX: driver_id
+
+Validaciones:
+- seats_reserved > 0
+- price_per_seat >= 0
+- total_amount = seats_reserved * price_per_seat
+
+
+================================================================================
+3. ENDPOINTS HTTP - BOOKINGS API
+================================================================================
+
+Puerto: 8003
+
+------------------------------------------------------------------------------
+RUTAS PÚBLICAS (sin autenticación)
+------------------------------------------------------------------------------
+GET    /health                    # Health check
+
+
+------------------------------------------------------------------------------
+RUTAS PROTEGIDAS (requieren JWT)
+------------------------------------------------------------------------------
+POST   /bookings                  # Crear nueva reserva (con proceso concurrente)
+GET    /bookings/:id              # Obtener reserva por ID
+PUT    /bookings/:id/cancel       # Cancelar reserva
+GET    /bookings/user/:userId     # Obtener reservas de un usuario
+POST   /bookings/:id/confirm-arrival  # Confirmar llegada segura
+GET    /bookings/trip/:tripId     # Obtener reservas de un viaje (solo conductor)
+
+
+------------------------------------------------------------------------------
+RUTAS INTERNAS (comunicación entre microservicios)
+------------------------------------------------------------------------------
+GET    /internal/bookings/:id                # Obtener reserva (sin auth)
+GET    /internal/bookings/trip/:tripId       # Reservas de un viaje (sin auth)
+PUT    /internal/bookings/:id/complete       # Marcar como completada (sin auth)
+
+
+================================================================================
+4. LÓGICA DE NEGOCIO - BOOKING SERVICE
+================================================================================
+
+------------------------------------------------------------------------------
+4.1 CreateBooking() - PROCESO CONCURRENTE PRINCIPAL
+------------------------------------------------------------------------------
+
+Input:
+- trip_id
+- passenger_id (del JWT)
+- seats_reserved
+
+Proceso Concurrente (usando Goroutines + Channels):
+
+1. Crear WaitGroup y ErrorChannel
+2. Lanzar Goroutines en paralelo:
+
+   Goroutine 1: Verificar disponibilidad del viaje
+   - Llamar GET trips-api/trips/:id
+   - Validar available_seats >= seats_reserved
+   - Validar status == 'published'
+   - Validar departure_date > NOW()
+   - Enviar resultado al channel
+
+   Goroutine 2: Validar usuario pasajero
+   - Llamar GET users-api/users/:id
+   - Validar que el usuario existe
+   - Validar role == 'user'
+   - Enviar resultado al channel
+
+   Goroutine 3: Verificar conflictos de horario
+   - Buscar reservas del pasajero en la misma fecha
+   - Query: SELECT * FROM bookings WHERE passenger_id=? AND trip_date=?
+   - Validar que no haya overlap de horarios
+   - Enviar resultado al channel
+
+   Goroutine 4: Validar que pasajero != conductor
+   - Obtener driver_id del viaje
+   - Validar passenger_id != driver_id
+   - Enviar resultado al channel
+
+3. WaitGroup.Wait() - Esperar a que todas terminen
+4. Recolectar errores del ErrorChannel
+5. Si hay errores, return error con detalles
+6. Si todo OK, continuar con creación
+
+Creación de la Reserva:
+7. Iniciar transacción MySQL
+8. Crear registro en tabla bookings
+9. Llamar PUT trips-api/trips/:id para decrementar available_seats
+10. Si falla, rollback
+11. Commit transacción
+12. Publicar evento en RabbitMQ: "reservation.created"
+13. Return reserva creada
+
+Códigos de respuesta:
+- 201: Reserva creada exitosamente
+- 400: Datos inválidos
+- 409: No hay disponibilidad / Conflicto de horario
+- 500: Error del servidor
+
+
+------------------------------------------------------------------------------
+4.2 GetBookingByID()
+------------------------------------------------------------------------------
+- Buscar reserva por ID
+- Validar que el usuario autenticado sea el pasajero O el conductor
+- Return 200 + booking DTO
+- Return 404 si no existe
+- Return 403 si no tiene permiso
+
+
+------------------------------------------------------------------------------
+4.3 CancelBooking()
+------------------------------------------------------------------------------
+- Buscar reserva por ID
+- Validar status != 'completed' y != 'cancelled'
+- Validar que el usuario sea el pasajero
+- Validar que falten más de 24h para departure_date
+- Actualizar status = 'cancelled'
+- Actualizar payment_status = 'refunded'
+- Incrementar available_seats en trips-api
+- Publicar evento RabbitMQ: "reservation.cancelled"
+- Return 200 + booking actualizado
+
+
+------------------------------------------------------------------------------
+4.4 GetUserBookings()
+------------------------------------------------------------------------------
+- Obtener todas las reservas del usuario (como pasajero O conductor)
+- Permitir filtros: status, date_from, date_to
+- Paginación: page, limit (default 10, max 100)
+- Ordenar por created_at DESC
+- Return 200 + array de bookings
+
+
+------------------------------------------------------------------------------
+4.5 ConfirmArrival()
+------------------------------------------------------------------------------
+- Buscar reserva por ID
+- Validar status == 'confirmed'
+- Validar que el usuario sea el pasajero
+- Actualizar arrived_safely = TRUE
+- Actualizar arrival_confirmed_at = NOW()
+- Si todos los pasajeros confirmaron llegada, actualizar status = 'completed'
+- Publicar evento RabbitMQ: "reservation.completed"
+- Return 200 + booking actualizado
+
+
+------------------------------------------------------------------------------
+4.6 GetTripBookings()
+------------------------------------------------------------------------------
+- Obtener todas las reservas de un viaje
+- Validar que el usuario sea el conductor del viaje
+- Return 200 + array de bookings
+
+
+================================================================================
+5. VALIDACIÓN CONCURRENTE - VALIDATION SERVICE
+================================================================================
+
+Archivo: internal/service/validation.go
+
+Structs necesarios:
+- ValidationResult { Success bool, Error error }
+- ValidationContext { TripID, PassengerID, SeatsReserved, ... }
+
+Funciones:
+
+ValidateTripAvailability(ctx, tripID, seats) → channel ValidationResult
+- Goroutine que valida con trips-api
+
+ValidateUser(ctx, userID) → channel ValidationResult
+- Goroutine que valida con users-api
+
+CheckScheduleConflicts(ctx, passengerID, date) → channel ValidationResult
+- Goroutine que busca en BD
+
+ValidatePassengerNotDriver(ctx, passengerID, driverID) → channel ValidationResult
+- Goroutine simple de comparación
+
+RunConcurrentValidations(ctx ValidationContext) → error
+- Función orquestadora que lanza todas las goroutines
+- Usa sync.WaitGroup
+- Usa channels para recolectar resultados
+- Return primer error encontrado o nil
+
+
+================================================================================
+6. CLIENTES HTTP - TRIPS Y USERS API
+================================================================================
+
+------------------------------------------------------------------------------
+6.1 TripsClient (internal/service/trips_client.go)
+------------------------------------------------------------------------------
+
+Interface:
+type TripsClient interface {
+    GetTrip(tripID string) (*TripDTO, error)
+    UpdateTripSeats(tripID string, seats int) error
+    GetTripDriver(tripID string) (int64, error)
+}
+
+Implementación:
+- Usar http.Client con timeout de 5 segundos
+- Base URL desde config: TRIPS_API_URL
+- Métodos:
+  * GetTrip() → GET /trips/:id
+  * UpdateTripSeats() → PUT /trips/:id/seats
+  * GetTripDriver() → GET /trips/:id/driver
+
+Structs:
+- TripDTO con campos necesarios
+
+
+------------------------------------------------------------------------------
+6.2 UsersClient (internal/service/users_client.go)
+------------------------------------------------------------------------------
+
+Interface:
+type UsersClient interface {
+    GetUser(userID int64) (*UserDTO, error)
+    ValidateUser(userID int64) error
+}
+
+Implementación:
+- Usar http.Client con timeout de 5 segundos
+- Base URL desde config: USERS_API_URL
+- Métodos:
+  * GetUser() → GET /users/:id
+  * ValidateUser() → GET /users/:id (solo valida existencia)
+
+Structs:
+- UserDTO simplificado
+
+
+================================================================================
+7. RABBITMQ - PUBLICACIÓN DE EVENTOS
+================================================================================
+
+Archivo: internal/service/rabbitmq.go
+
+Exchange: reservations.events (tipo: topic)
+
+Eventos a publicar:
+
+1. reservation.created
+   {
+     "event": "reservation.created",
+     "reservation_id": "uuid",
+     "trip_id": "mongodb-id",
+     "passenger_id": 123,
+     "seats_reserved": 2,
+     "timestamp": "2024-11-01T10:00:00Z"
+   }
+
+2. reservation.cancelled
+   {
+     "event": "reservation.cancelled",
+     "reservation_id": "uuid",
+     "trip_id": "mongodb-id",
+     "seats_restored": 2,
+     "timestamp": "2024-11-01T10:00:00Z"
+   }
+
+3. reservation.completed
+   {
+     "event": "reservation.completed",
+     "reservation_id": "uuid",
+     "trip_id": "mongodb-id",
+     "timestamp": "2024-11-01T10:00:00Z"
+   }
+
+Interface:
+type RabbitMQClient interface {
+    PublishEvent(eventType string, payload interface{}) error
+    Close() error
+}
+
+Implementación:
+- Conexión en main.go
+- Declarar exchange al iniciar
+- Función PublishEvent() para enviar eventos
+- Serializar payload a JSON
+- Routing key = event type
+
+
+================================================================================
+8. CONFIGURACIÓN - CONFIG.GO
+================================================================================
+
+Archivo: internal/config/config.go
+
+Struct Config:
+type Config struct {
+    // Database
+    DBHost     string
+    DBPort     string
+    DBUser     string
+    DBPassword string
+    DBName     string
+
+    // Server
+    ServerPort string
+
+    // JWT
+    JWTSecret string
+
+    // External Services
+    TripsAPIURL string
+    UsersAPIURL string
+
+    // RabbitMQ
+    RabbitMQURL      string
+    RabbitMQExchange string
+}
+
+Función LoadConfig():
+- Usar godotenv para cargar .env
+- Validar que todas las variables requeridas existan
+- Return *Config
+
+
+================================================================================
+9. MIDDLEWARE
+================================================================================
+
+------------------------------------------------------------------------------
+9.1 AuthMiddleware (copiar de users-api)
+------------------------------------------------------------------------------
+- Validar JWT token
+- Extraer claims: user_id, email, role
+- Setear en context de Gin
+- Return 401 si inválido
+
+
+------------------------------------------------------------------------------
+9.2 CORSMiddleware (copiar de users-api)
+------------------------------------------------------------------------------
+- Permitir todos los orígenes (desarrollo)
+- Headers permitidos: Authorization, Content-Type
+- Métodos: GET, POST, PUT, DELETE, OPTIONS
+
+
+------------------------------------------------------------------------------
+9.3 ErrorHandler
+------------------------------------------------------------------------------
+- Middleware global de errores
+- Capturar panics
+- Return respuesta JSON estandarizada
+
+
+================================================================================
+10. RUTAS - ROUTES.GO
+================================================================================
+
+Archivo: internal/routes/routes.go
+
+func SetupRoutes(router *gin.Engine, controller *BookingController, authMiddleware gin.HandlerFunc) {
+
+    // Public routes
+    router.GET("/health", healthCheck)
+
+    // Protected routes
+    protected := router.Group("/")
+    protected.Use(authMiddleware)
+    {
+        protected.POST("/bookings", controller.CreateBooking)
+        protected.GET("/bookings/:id", controller.GetBookingByID)
+        protected.PUT("/bookings/:id/cancel", controller.CancelBooking)
+        protected.GET("/bookings/user/:userId", controller.GetUserBookings)
+        protected.POST("/bookings/:id/confirm-arrival", controller.ConfirmArrival)
+        protected.GET("/bookings/trip/:tripId", controller.GetTripBookings)
+    }
+
+    // Internal routes (no auth)
+    internal := router.Group("/internal")
+    {
+        internal.GET("/bookings/:id", controller.GetBookingByIDInternal)
+        internal.GET("/bookings/trip/:tripId", controller.GetTripBookingsInternal)
+        internal.PUT("/bookings/:id/complete", controller.CompleteBookingInternal)
+    }
+}
+
+
+================================================================================
+11. CONTROLADOR - BOOKING CONTROLLER
+================================================================================
+
+Archivo: internal/controller/booking.go
+
+type BookingController struct {
+    service service.BookingService
+}
+
+func NewBookingController(service service.BookingService) *BookingController {
+    return &BookingController{service: service}
+}
+
+Métodos:
+
+CreateBooking(c *gin.Context)
+- Bind JSON request
+- Obtener user_id del context
+- Validar campos requeridos
+- Llamar service.CreateBooking()
+- Return 201 + booking creado
+
+GetBookingByID(c *gin.Context)
+- Obtener ID del path param
+- Obtener user_id del context
+- Llamar service.GetBookingByID()
+- Validar permisos
+- Return 200 + booking
+
+CancelBooking(c *gin.Context)
+- Similar a GetBookingByID pero con validaciones
+- Return 200 + booking actualizado
+
+GetUserBookings(c *gin.Context)
+- Obtener userId del path param
+- Validar que sea el mismo user_id del JWT o admin
+- Parse query params: page, limit, status
+- Return 200 + array + pagination
+
+ConfirmArrival(c *gin.Context)
+- Obtener booking ID
+- Validar que sea el pasajero
+- Return 200 + booking actualizado
+
+GetTripBookings(c *gin.Context)
+- Obtener trip_id
+- Validar que sea el conductor
+- Return 200 + array
+
+
+================================================================================
+12. REPOSITORIO - BOOKING REPOSITORY
+================================================================================
+
+Archivo: internal/repository/booking.go
+
+Interface:
+type BookingRepository interface {
+    Create(booking *dao.BookingDAO) error
+    FindByID(id string) (*dao.BookingDAO, error)
+    FindByPassengerID(passengerID int64, page, limit int) ([]*dao.BookingDAO, error)
+    FindByDriverID(driverID int64, page, limit int) ([]*dao.BookingDAO, error)
+    FindByTripID(tripID string) ([]*dao.BookingDAO, error)
+    Update(booking *dao.BookingDAO) error
+    CheckScheduleConflict(passengerID int64, date time.Time) (bool, error)
+    CountByPassengerID(passengerID int64) (int64, error)
+}
+
+Implementación con GORM:
+- Todas las funciones usan db *gorm.DB
+- Manejo de errores apropiado
+- Queries optimizadas con índices
+
+
+================================================================================
+13. DOMINIO - DTOs
+================================================================================
+
+Archivo: internal/domain/booking.go
+
+type CreateBookingRequest struct {
+    TripID        string `json:"trip_id" binding:"required"`
+    SeatsReserved int    `json:"seats_reserved" binding:"required,min=1"`
+}
+
+type BookingDTO struct {
+    ID                  string    `json:"id"`
+    TripID              string    `json:"trip_id"`
+    PassengerID         int64     `json:"passenger_id"`
+    DriverID            int64     `json:"driver_id"`
+    SeatsReserved       int       `json:"seats_reserved"`
+    PricePerSeat        float64   `json:"price_per_seat"`
+    TotalAmount         float64   `json:"total_amount"`
+    Status              string    `json:"status"`
+    PaymentStatus       string    `json:"payment_status"`
+    ArrivedSafely       bool      `json:"arrived_safely"`
+    ArrivalConfirmedAt  *time.Time `json:"arrival_confirmed_at,omitempty"`
+    CreatedAt           time.Time `json:"created_at"`
+    UpdatedAt           time.Time `json:"updated_at"`
+}
+
+type BookingListResponse struct {
+    Bookings   []*BookingDTO  `json:"bookings"`
+    Pagination PaginationInfo `json:"pagination"`
+}
+
+type PaginationInfo struct {
+    Page       int   `json:"page"`
+    Limit      int   `json:"limit"`
+    TotalItems int64 `json:"total_items"`
+    TotalPages int   `json:"total_pages"`
+}
+
+
+================================================================================
+14. MAIN.GO - INICIALIZACIÓN
+================================================================================
+
+Archivo: cmd/api/main.go
+
+Flujo de inicialización:
+
+1. Cargar configuración
+   config := config.LoadConfig()
+
+2. Conectar a MySQL
+   db := connectDB(config)
+   db.AutoMigrate(&dao.BookingDAO{})
+
+3. Conectar a RabbitMQ
+   rabbitClient := service.NewRabbitMQClient(config.RabbitMQURL)
+   defer rabbitClient.Close()
+
+4. Inicializar clientes HTTP
+   tripsClient := service.NewTripsClient(config.TripsAPIURL)
+   usersClient := service.NewUsersClient(config.UsersAPIURL)
+
+5. Inicializar repositorio
+   bookingRepo := repository.NewBookingRepository(db)
+
+6. Inicializar servicios
+   validationService := service.NewValidationService(tripsClient, usersClient, bookingRepo)
+   bookingService := service.NewBookingService(bookingRepo, validationService, tripsClient, rabbitClient)
+
+7. Inicializar controlador
+   bookingController := controller.NewBookingController(bookingService)
+
+8. Crear router Gin
+   router := gin.Default()
+   router.Use(middleware.CORSMiddleware())
+   router.Use(middleware.ErrorHandler())
+
+9. Configurar rutas
+   authMiddleware := middleware.AuthMiddleware(config.JWTSecret)
+   routes.SetupRoutes(router, bookingController, authMiddleware)
+
+10. Iniciar servidor
+    router.Run(":" + config.ServerPort)
+
+
+================================================================================
+15. ARCHIVO .ENV
+================================================================================
+
+# Database Configuration
+DB_HOST=mysql-reservations
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=Prueba.9876
+DB_NAME=carpooling_reservations
+
+# Server Configuration
+SERVER_PORT=8003
+
+# JWT Configuration (mismo secret que users-api)
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+
+# External Services
+TRIPS_API_URL=http://trips-api:8002
+USERS_API_URL=http://users-api:8001
+
+# RabbitMQ Configuration
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+RABBITMQ_EXCHANGE=reservations.events
+
+
+================================================================================
+16. DOCKERFILE
+================================================================================
+
+# Build stage
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bookings-api ./cmd/api
+
+# Runtime stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /root/
+
+COPY --from=builder /app/bookings-api .
+COPY --from=builder /app/.env .
+
+EXPOSE 8003
+
+CMD ["./bookings-api"]
+
+
+================================================================================
+17. DEPENDENCIAS GO (go.mod)
+================================================================================
+
+module github.com/yourproject/bookings-api
+
+go 1.21
+
+require (
+    github.com/gin-gonic/gin v1.10.0
+    github.com/golang-jwt/jwt/v5 v5.2.1
+    github.com/google/uuid v1.6.0
+    github.com/joho/godotenv v1.5.1
+    github.com/streadway/amqp v1.1.0
+    github.com/stretchr/testify v1.9.0
+    gorm.io/driver/mysql v1.5.7
+    gorm.io/gorm v1.25.12
+)
+
+
+================================================================================
+18. TESTS UNITARIOS
+================================================================================
+
+Archivo: internal/service/booking_test.go
+
+Tests a implementar:
+
+1. TestCreateBooking_Success
+   - Mock de todas las validaciones exitosas
+   - Verificar que se crea la reserva
+   - Verificar que se llama a trips-api
+   - Verificar que se publica evento
+
+2. TestCreateBooking_NoAvailability
+   - Mock de validación de disponibilidad fallida
+   - Verificar error 409
+
+3. TestCreateBooking_ScheduleConflict
+   - Mock de conflicto de horario
+   - Verificar error apropiado
+
+4. TestCancelBooking_Success
+   - Verificar actualización de status
+   - Verificar llamada a trips-api
+   - Verificar evento publicado
+
+5. TestCancelBooking_TooLate
+   - Booking con menos de 24h
+   - Verificar error
+
+6. TestConfirmArrival_Success
+   - Verificar actualización de arrived_safely
+   - Verificar evento si todos confirmaron
+
+Usar testify/mock para mockear:
+- BookingRepository
+- TripsClient
+- UsersClient
+- RabbitMQClient
+
+
+================================================================================
+19. ORDEN DE IMPLEMENTACIÓN (PASOS)
+================================================================================
+
+FASE 1: Estructura base
+□ 1.1 Crear estructura de directorios
+□ 1.2 Inicializar go.mod
+□ 1.3 Crear archivo .env
+□ 1.4 Crear Dockerfile
+
+FASE 2: Modelos y configuración
+□ 2.1 Implementar config/config.go
+□ 2.2 Implementar dao/booking.go
+□ 2.3 Implementar domain/booking.go (DTOs)
+
+FASE 3: Repositorio
+□ 3.1 Implementar repository/booking.go (interface)
+□ 3.2 Implementar métodos CRUD
+□ 3.3 Implementar CheckScheduleConflict()
+
+FASE 4: Clientes externos
+□ 4.1 Implementar service/trips_client.go
+□ 4.2 Implementar service/users_client.go
+□ 4.3 Implementar service/rabbitmq.go
+
+FASE 5: Servicios de negocio
+□ 5.1 Implementar service/validation.go (validaciones concurrentes)
+□ 5.2 Implementar service/booking.go (CreateBooking con goroutines)
+□ 5.3 Implementar GetBookingByID()
+□ 5.4 Implementar CancelBooking()
+□ 5.5 Implementar ConfirmArrival()
+□ 5.6 Implementar GetUserBookings()
+□ 5.7 Implementar GetTripBookings()
+
+FASE 6: Middleware
+□ 6.1 Copiar y adaptar middleware/auth.go
+□ 6.2 Copiar middleware/cors.go
+□ 6.3 Implementar middleware/error.go
+
+FASE 7: Controladores
+□ 7.1 Implementar controller/booking.go
+□ 7.2 Implementar todos los handlers
+
+FASE 8: Rutas y main
+□ 8.1 Implementar routes/routes.go
+□ 8.2 Implementar cmd/api/main.go con inyección de dependencias
+
+FASE 9: Testing
+□ 9.1 Implementar tests en service/booking_test.go
+□ 9.2 Ejecutar tests y verificar cobertura
+
+FASE 10: Integración
+□ 10.1 Probar conexión con users-api
+□ 10.2 Probar conexión con trips-api
+□ 10.3 Probar RabbitMQ
+□ 10.4 Pruebas end-to-end
+
+
+================================================================================
+20. NOTAS IMPORTANTES
+================================================================================
+
+PROCESO CONCURRENTE:
+- Usar sync.WaitGroup para sincronización
+- Usar channels buffered para errores
+- Timeout de 5 segundos para llamadas HTTP
+- Context con cancel para abortar goroutines
+
+TRANSACCIONES:
+- Usar db.Transaction() de GORM
+- Rollback si falla actualización de trips-api
+- Garantizar consistencia entre microservicios
+
+VALIDACIONES:
+- trip_id debe existir en trips-api
+- passenger_id debe existir en users-api
+- available_seats >= seats_reserved
+- passenger_id != driver_id
+- No conflictos de horario
+- Departure date > NOW()
+
+EVENTOS RABBITMQ:
+- Publicar después de commit de transacción
+- Incluir timestamp en todos los eventos
+- Routing key = tipo de evento
+- Payload en JSON
+
+SEGURIDAD:
+- Validar JWT en todas las rutas protegidas
+- Validar que el usuario solo vea/modifique sus propias reservas
+- Solo el conductor puede ver todas las reservas de su viaje
+- Endpoints internos sin autenticación (solo para microservicios)
+
+CÓDIGOS HTTP:
+- 200: OK
+- 201: Created
+- 400: Bad Request (validación)
+- 401: Unauthorized (sin JWT)
+- 403: Forbidden (sin permisos)
+- 404: Not Found
+- 409: Conflict (no disponibilidad, horario)
+- 500: Internal Server Error
+
+INYECCIÓN DE DEPENDENCIAS:
+- Seguir mismo patrón que users-api
+- Constructor functions: New{Component}()
+- Interfaces para todos los servicios y repos
+- Mock en tests
+
+
+================================================================================
+21. EJEMPLO DE CÓDIGO - PROCESO CONCURRENTE
+================================================================================
+
+// Pseudocódigo del proceso concurrente en CreateBooking
+
+func (s *bookingService) CreateBooking(req CreateBookingRequest, userID int64) (*BookingDTO, error) {
+
+    // 1. Preparar contexto y sincronización
+    var wg sync.WaitGroup
+    errChan := make(chan error, 4) // Buffer para 4 validaciones
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    // 2. Variables para resultados
+    var trip *TripDTO
+    var driver *UserDTO
+
+    // 3. Goroutine 1: Validar disponibilidad
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        t, err := s.tripsClient.GetTrip(req.TripID)
+        if err != nil {
+            errChan <- fmt.Errorf("trip validation failed: %w", err)
+            return
+        }
+        if t.AvailableSeats < req.SeatsReserved {
+            errChan <- errors.New("not enough available seats")
+            return
+        }
+        trip = t
+    }()
+
+    // 4. Goroutine 2: Validar usuario
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        err := s.usersClient.ValidateUser(userID)
+        if err != nil {
+            errChan <- fmt.Errorf("user validation failed: %w", err)
+        }
+    }()
+
+    // 5. Goroutine 3: Verificar conflictos
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        conflict, err := s.repo.CheckScheduleConflict(userID, trip.DepartureDate)
+        if err != nil {
+            errChan <- err
+            return
+        }
+        if conflict {
+            errChan <- errors.New("schedule conflict detected")
+        }
+    }()
+
+    // 6. Goroutine 4: Validar pasajero != conductor
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        if trip.DriverID == userID {
+            errChan <- errors.New("passenger cannot be the driver")
+        }
+    }()
+
+    // 7. Esperar a todas las goroutines
+    wg.Wait()
+    close(errChan)
+
+    // 8. Recolectar errores
+    for err := range errChan {
+        if err != nil {
+            return nil, err // Return primer error
+        }
+    }
+
+    // 9. Si todo OK, crear reserva en transacción
+    booking := &dao.BookingDAO{
+        ID:            uuid.New().String(),
+        TripID:        req.TripID,
+        PassengerID:   userID,
+        DriverID:      trip.DriverID,
+        SeatsReserved: req.SeatsReserved,
+        PricePerSeat:  trip.PricePerSeat,
+        TotalAmount:   float64(req.SeatsReserved) * trip.PricePerSeat,
+        Status:        "pending",
+        PaymentStatus: "pending",
+    }
+
+    // 10. Transacción
+    err := s.repo.Create(booking)
+    if err != nil {
+        return nil, err
+    }
+
+    // 11. Actualizar seats en trips-api
+    err = s.tripsClient.UpdateTripSeats(req.TripID, -req.SeatsReserved)
+    if err != nil {
+        // Rollback manual o compensación
+        s.repo.Delete(booking.ID)
+        return nil, err
+    }
+
+    // 12. Publicar evento
+    s.rabbitClient.PublishEvent("reservation.created", booking)
+
+    // 13. Return DTO
+    return toBookingDTO(booking), nil
+}
+
+
+================================================================================
+FIN DEL PLAN - BOOKINGS-API
+================================================================================
+
+Este plan sigue exactamente la misma estructura y patrones que users-api:
+✓ Patrón MVC
+✓ Inyección de dependencias
+✓ Interfaces para servicios y repositorios
+✓ Middleware reutilizable
+✓ DTOs para separar dominio de persistencia
+✓ Tests unitarios con mocks
+✓ Docker support
+✓ Configuración por environment variables
+
+DIFERENCIAS PRINCIPALES CON USERS-API:
++ Proceso concurrente con Goroutines y Channels
++ Integración con RabbitMQ para eventos
++ Clientes HTTP para comunicación con otros microservicios
++ Transacciones distribuidas
++ Validaciones más complejas
+
+Fecha: Noviembre 2024
+Proyecto: Sistema de Carpooling UCC - Arquitectura de Software II
