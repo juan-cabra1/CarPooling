@@ -1,524 +1,275 @@
-# How to Use Plan Mode with Claude Code
+# How to Use Claude Code Plan Mode
 
-## Quick Start Guide
+## Quick Start
 
-### 1. Initial Setup (One Time)
-
+### 1. Navigate to Project
 ```bash
 cd /home/user/CarPooling
+```
 
-# Verify context files exist
-ls -la CONTEXT_BOOKINGS_API.md GITFLOW.md
-
-# Checkout dev branch
+### 2. Create Feature Branch
+```bash
+# Always start from latest dev
 git checkout dev
 git pull origin dev
+
+# Create feature branch (example for trips-api issue #1)
+git checkout -b feature/trips-api/1-project-setup
 ```
 
----
-
-## 2. Start Working on a Phase
-
-### Step 1: Create Feature Branch
-```bash
-# Example: Starting Phase 1
-git checkout -b feature/bookings-api-phase-1-setup
-```
-
-### Step 2: Enter Plan Mode with Context
-
-**Option A: Using file reference (RECOMMENDED)**
-```bash
-# From project root
-claude
-
-# In Claude Code, type:
-@CONTEXT_BOOKINGS_API.md @GITFLOW.md I want to implement Phase 1 of bookings-api. Please create a plan for:
-- Initializing go.mod
-- Setting up .env file
-- Creating main.go skeleton
-- Adding all dependencies
-
-Follow the structure from users-api at backend/users-api
-```
-
-**Option B: Inline context (if file refs don't work)**
+### 3. Start Claude Code
 ```bash
 claude
-
-# Then paste the relevant section from CONTEXT_BOOKINGS_API.md
-# For Phase 1, copy the "Phase 1 - Project Setup" section from GITFLOW.md
-# Then say:
-
-Based on this context, create a plan to implement Phase 1 of bookings-api
 ```
 
-**Option C: Direct prompt with full context**
-```bash
-claude
+### 4. Use Plan Mode with Context
 
-# Type or paste:
-I'm implementing bookings-api for a CarPooling project.
-
-Context:
-- Technology: Go 1.21, Gin, GORM, MySQL
-- Port: 8003
-- Pattern: Copy from backend/users-api
-- Dependencies: gin, gorm, uuid, zerolog, amqp
-
-Phase 1 Tasks:
-1. Initialize go mod init bookings-api
-2. Create .env with DB credentials, JWT secret, RabbitMQ URL
-3. Create cmd/api/main.go with basic server
-4. Add all dependencies
-
-Please create a step-by-step plan
 ```
-
----
-
-## 3. Example Prompts for Each Phase
-
-### Phase 1: Project Setup
-```
-@CONTEXT_BOOKINGS_API.md I need to implement Phase 1 (Project Setup) for bookings-api.
+@CONTEXT_TRIPS_API.md Implement Phase 1 (Project Setup) for trips-api.
 
 Tasks:
-- Initialize Go modules
-- Create .env file with MySQL, RabbitMQ, JWT config
-- Setup main.go skeleton
-- Add dependencies: gin, gorm, uuid, zerolog, amqp
+- Initialize go mod init trips-api
+- Create .env with MongoDB, RabbitMQ, JWT config
+- Setup cmd/api/main.go with basic server on port 8002
+- Add dependencies: gin, mongo-driver, uuid, zerolog, amqp
 
-Follow the same structure as backend/users-api
+Follow pattern from backend/users-api/cmd/api/main.go but for MongoDB
 ```
 
-### Phase 2: Database Setup
+---
+
+## Pattern for Each Feature
+
 ```
-@CONTEXT_BOOKINGS_API.md I need to implement Phase 2 (Database Setup) for bookings-api.
+@CONTEXT_{SERVICE}_API.md Implement [Feature Name] for {service}-api.
+
+Tasks:
+- Task 1
+- Task 2
+- Task 3
+
+[Any additional context or patterns to follow]
+```
+
+---
+
+## Example Prompts
+
+### trips-api Phase 1: Project Setup
+```
+@CONTEXT_TRIPS_API.md Implement Phase 1 (Project Setup) for trips-api.
+
+Initialize the project with:
+- Go modules (go mod init trips-api)
+- .env file with MONGO_URI, JWT_SECRET, SERVER_PORT, RABBITMQ_URL
+- cmd/api/main.go with Gin server on port 8002
+- All dependencies from CONTEXT_TRIPS_API.md
+
+Reference backend/users-api structure
+```
+
+### trips-api Phase 2: MongoDB Connection
+```
+@CONTEXT_TRIPS_API.md Implement MongoDB connection and domain models for trips-api.
 
 Create:
-1. internal/config/config.go (copy pattern from users-api)
-2. internal/dao/booking.go with GORM tags
-3. internal/dao/processed_event.go with GORM tags
-4. internal/domain/booking.go with DTOs
+1. internal/config/config.go - Load env variables
+2. internal/domain/trip.go - Trip struct with all fields from MongoDB schema
+3. Connect to MongoDB in main.go
+4. Create indexes: driver_id, status, departure_datetime, origin.city+destination.city
 
-Database schema is in CONTEXT_BOOKINGS_API.md
-
-Ensure:
-- UNIQUE index on processed_events.event_id
-- All GORM tags match MySQL schema
-- Auto-migration in main.go
+MongoDB schema is in CONTEXT_TRIPS_API.md
 ```
 
-### Phase 3: Repository Layer
+### trips-api Phase 3: Repository Layer
 ```
-@CONTEXT_BOOKINGS_API.md Implement Phase 3 (Repository Layer) for bookings-api.
+@CONTEXT_TRIPS_API.md Implement repository layer with MongoDB driver.
 
 Create:
-1. internal/repository/booking_repository.go
+1. internal/repository/trip_repository.go
    - Interface with CRUD methods
-   - GORM implementation
+   - MongoDB implementation with mongo-driver
 
 2. internal/repository/event_repository.go
    - IsEventProcessed(eventID) (bool, error)
    - MarkEventProcessed(event) error
-   - Use UNIQUE constraint for idempotency
+   - Use UNIQUE index on event_id for idempotency
 
-Copy pattern from users-api repository layer
+Include optimistic locking in UpdateAvailability method
 ```
 
-### Phase 7: RabbitMQ Consumer (CRITICAL)
+### trips-api Phase 7: RabbitMQ Consumer (CRITICAL)
 ```
-@CONTEXT_BOOKINGS_API.md Implement Phase 7 (RabbitMQ Consumer) - CRITICAL PHASE
+@CONTEXT_TRIPS_API.md Implement RabbitMQ consumer for reservation events - CRITICAL PHASE.
 
-This is the most important phase. Implement:
+This implements idempotency to prevent duplicate seat decreases.
 
-1. internal/messaging/rabbitmq.go - connection setup
-2. internal/messaging/trip_consumer.go with:
-   - HandleTripEvent(event) error
-   - IDEMPOTENCY check using CheckAndMarkEvent()
-   - handleTripUpdated(event) error
-   - handleTripCancelled(event) error
-   - handleReservationFailed(event) error
+Create internal/messaging/reservation_consumer.go with:
+- HandleReservationEvent(event) error
+- IDEMPOTENCY check using CheckAndMarkEvent() BEFORE processing
+- handleReservationCreated(event) - decrease seats with optimistic lock
+- handleReservationCancelled(event) - increase seats
 
-Critical requirements:
-- Check idempotency BEFORE processing
+Critical:
+- Check idempotency FIRST (event_id in processed_events collection)
 - Skip if already processed
 - Manual ACK only after success
 - NACK with requeue on transient errors
-- Structured logging with zerolog
+- Use optimistic locking (availability_version field)
 
-Event format in CONTEXT_BOOKINGS_API.md
-```
-
-### Phase 8: RabbitMQ Publisher
-```
-@CONTEXT_BOOKINGS_API.md Implement Phase 8 (RabbitMQ Publisher)
-
-Create internal/messaging/reservation_publisher.go with:
-- PublishReservationCreated(booking) error
-- PublishReservationCancelled(booking, reason) error
-- PublishReservationFailed(booking, reason) error
-
-CRITICAL:
-- Generate UUID for event_id BEFORE publishing (uuid.New().String())
-- Set DeliveryMode: Persistent
-- Set MessageId: event.EventID
-- Publish to "reservations.events" exchange
-
-Event format in CONTEXT_BOOKINGS_API.md
+Event format and idempotency logic in CONTEXT_TRIPS_API.md
 ```
 
 ---
 
-## 4. During Plan Mode
+## What Happens in Plan Mode
 
-### What Claude Code Will Do:
-1. Read the context files
-2. Analyze users-api structure for patterns
-3. Create a detailed step-by-step plan
-4. Ask for your approval
-
-### You Should:
-1. Review the plan carefully
-2. Ask questions if something is unclear
-3. Request changes if needed
-4. Approve to exit plan mode and start implementation
+1. **Claude reads context** - Loads CONTEXT_TRIPS_API.md
+2. **Analyzes patterns** - Reviews users-api for reference
+3. **Creates plan** - Detailed step-by-step implementation
+4. **Asks for approval** - Reviews plan with you
+5. **Implements** - Executes the plan after approval
 
 ---
 
-## 5. After Plan Approval (Implementation)
+## During Plan Mode
 
-Claude will implement the plan. Monitor:
+### Good Practices
+✅ Be specific about which feature/phase
+✅ Reference context file with @
+✅ Mention patterns to copy (e.g., from users-api)
+✅ Include success criteria from issue
+✅ Ask questions if plan is unclear
 
+### What to Avoid
+❌ Generic prompts ("implement trips-api")
+❌ Forgetting to reference context file
+❌ Approving plan without understanding it
+❌ Skipping testing steps
+
+---
+
+## After Implementation
+
+### 1. Test
 ```bash
-# Watch files being created
-watch -n 1 'tree backend/bookings-api'
+cd backend/trips-api
 
-# Check git status frequently
-git status
-
-# View changes
-git diff
-```
-
----
-
-## 6. Testing Each Phase
-
-### Compile Check
-```bash
-cd backend/bookings-api
+# Compile
 go mod tidy
 go build ./cmd/api
-```
 
-### Run Tests
-```bash
-go test ./internal/service/... -v
-go test ./... -cover
-```
+# Run tests (if applicable)
+go test ./... -v
 
-### Manual Testing
-```bash
-# Start server
+# Manual test
 go run cmd/api/main.go
-
-# In another terminal, test endpoints
-curl http://localhost:8003/health
-
-# Test creating booking (after Phase 12)
-curl -X POST http://localhost:8003/bookings \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"trip_id":"507f1f77bcf86cd799439011","seats_reserved":2}'
+# In another terminal:
+curl http://localhost:8002/health
 ```
 
----
-
-## 7. Completing a Phase
-
-### Commit Changes
+### 2. Commit
 ```bash
-cd /home/user/CarPooling
-
-# Review changes
 git status
 git diff
 
-# Stage all changes
-git add backend/bookings-api
+git add .
+git commit -m "feat(trips): initialize project structure and dependencies
 
-# Commit with conventional commit message
-git commit -m "feat(bookings): implement phase 1 - project setup
-
-- Initialize Go modules
+- Create go.mod and go.sum
 - Setup .env configuration
-- Create main.go skeleton
-- Add all dependencies (gin, gorm, uuid, zerolog, amqp)
+- Add basic main.go with Gin server
+- Install all dependencies
 
 Closes #1"
-
-# Push to remote
-git push -u origin feature/bookings-api-phase-1-setup
 ```
 
-### Create Pull Request
+### 3. Push and PR
 ```bash
-# Option 1: Using GitHub web interface
-# Go to: https://github.com/juan-cabra1/CarPooling
-# Click "Compare & pull request"
-# Base: dev, Compare: feature/bookings-api-phase-1-setup
-# Title: "Phase 1: Project Setup for bookings-api"
-# Description: Copy success criteria from GITFLOW.md
+git push -u origin feature/trips-api/1-project-setup
 
-# Option 2: Using gh CLI (if available)
-gh pr create \
-  --base dev \
-  --head feature/bookings-api-phase-1-setup \
-  --title "Phase 1: Project Setup for bookings-api" \
-  --body "$(cat <<EOF
-## Phase 1: Project Setup
-
-### Completed Tasks
-- [x] Initialize go.mod
-- [x] Create .env and .env.example
-- [x] Setup main.go skeleton
-- [x] Add all dependencies
-
-### Success Criteria
-- [x] go mod tidy succeeds
-- [x] go build succeeds
-- [x] Server starts on port 8003
-
-### Testing
-\`\`\`bash
-cd backend/bookings-api
-go mod tidy
-go build ./cmd/api
-go run cmd/api/main.go
-\`\`\`
-
-Closes #1
-EOF
-)"
+# Create PR on GitHub:
+# Base: dev
+# Compare: feature/trips-api/1-project-setup
+# Title: feat(trips): Project Setup - Issue #1
 ```
 
 ---
 
-## 8. Moving to Next Phase
+## Workflow Summary
 
-After PR is merged:
-
-```bash
-# Update dev branch
-git checkout dev
-git pull origin dev
-
-# Start next phase
-git checkout -b feature/bookings-api-phase-2-database
-
-# Enter plan mode again
-claude
-
-# Use context for Phase 2
-@CONTEXT_BOOKINGS_API.md Implement Phase 2 (Database Setup) for bookings-api...
+```
+1. git checkout dev && git pull
+2. git checkout -b feature/trips-api/{issue}-{name}
+3. claude
+4. @CONTEXT_TRIPS_API.md Implement {feature}...
+5. [Review plan, approve]
+6. [Claude implements]
+7. Test (compile, run, curl)
+8. git commit -m "feat(trips): {description}"
+9. git push -u origin feature/...
+10. Create PR to dev
+11. After merge, repeat from step 1
 ```
 
 ---
 
-## Tips for Effective Plan Mode Usage
-
-### DO:
-✅ Reference context files with @filename
-✅ Be specific about which phase you're working on
-✅ Mention patterns to copy from users-api
-✅ Include success criteria in prompts
-✅ Ask Claude to explain if something is unclear
-✅ Review the plan before approving
-
-### DON'T:
-❌ Start coding without a plan
-❌ Skip phases (they build on each other)
-❌ Forget to reference CONTEXT_BOOKINGS_API.md
-❌ Mix multiple phases in one branch
-❌ Approve plan without understanding it
-❌ Skip testing after implementation
-
----
-
-## Example Full Workflow
-
-```bash
-# Phase 1 Start
-git checkout dev
-git pull origin dev
-git checkout -b feature/bookings-api-phase-1-setup
-
-# Enter Claude Code
-claude
-
-# In Claude:
-# """
-# @CONTEXT_BOOKINGS_API.md @GITFLOW.md
-#
-# Implement Phase 1 (Project Setup) for bookings-api.
-# Follow patterns from backend/users-api
-#
-# Tasks from GITFLOW.md Issue #1:
-# - Initialize go.mod
-# - Create .env file
-# - Setup main.go
-# - Add dependencies
-# """
-
-# [Claude creates plan, you review and approve]
-# [Claude implements]
-
-# Verify
-cd backend/bookings-api
-go mod tidy
-go build ./cmd/api
-go run cmd/api/main.go
-# (Ctrl+C to stop)
-
-# Commit
-git add .
-git commit -m "feat(bookings): implement phase 1 - project setup"
-git push -u origin feature/bookings-api-phase-1-setup
-
-# Create PR (GitHub web or gh CLI)
-# Wait for review/approval
-# Merge to dev
-
-# Phase 2 Start
-git checkout dev
-git pull origin dev
-git checkout -b feature/bookings-api-phase-2-database
-# ... repeat
-```
-
----
-
-## Troubleshooting
+## Common Issues
 
 ### "Claude can't find context file"
 ```bash
-# Verify file exists
-ls -la CONTEXT_BOOKINGS_API.md
-
-# Try absolute path
-@/home/user/CarPooling/CONTEXT_BOOKINGS_API.md
-
-# Or paste content directly
+# Use absolute path
+@/home/user/CarPooling/CONTEXT_TRIPS_API.md
 ```
 
 ### "Plan is too vague"
-```
-# Be more specific
-Instead of: "Implement Phase 2"
-Use: "Implement Phase 2 with BookingDAO GORM model using tags from CONTEXT_BOOKINGS_API.md schema"
-```
-
-### "Implementation differs from users-api pattern"
-```
-# Explicitly reference
-"Copy the exact pattern from backend/users-api/internal/repository/user.go"
-```
-
-### "Tests failing after implementation"
 ```bash
-# Run specific test
+# Be more specific
+Instead of: "Implement trips"
+Use: "Implement repository layer with MongoDB driver following CONTEXT_TRIPS_API.md schema"
+```
+
+### "Tests failing"
+```bash
+# Run specific test with verbose
 go test ./internal/service/idempotency_service_test.go -v
 
-# Check logs
-cat /tmp/bookings-api.log
-
-# Ask Claude to fix
-"""
-Tests are failing with error: [paste error]
-Please fix the issue in [file]
-"""
+# Check MongoDB connection
+docker ps | grep mongo
 ```
 
 ---
 
-## Advanced: Multi-Phase Planning
+## Tips
 
-If you want to plan multiple phases at once:
-
-```
-@CONTEXT_BOOKINGS_API.md
-
-I want to plan Phases 1-3 together (Setup, Database, Repository).
-
-Create a comprehensive plan that:
-1. Initializes the project (Phase 1)
-2. Sets up database models and connection (Phase 2)
-3. Implements repository layer (Phase 3)
-
-Show dependencies between phases and order of implementation.
-I'll implement in separate branches but want to understand the full picture.
-```
+1. **One feature at a time** - Don't mix multiple phases
+2. **Read context first** - Understand what you're building
+3. **Review plan carefully** - Especially for critical features (idempotency, optimistic locking)
+4. **Test before committing** - Verify compilation and basic functionality
+5. **Small commits** - One logical change per commit
+6. **Reference issues** - Use "Closes #N" in commit message
 
 ---
 
-## Context File Updates
-
-If you need to update context during development:
-
-```bash
-# Edit context file
-nano CONTEXT_BOOKINGS_API.md
-
-# Commit changes
-git add CONTEXT_BOOKINGS_API.md
-git commit -m "docs: update bookings-api context with new requirements"
-
-# Use updated context in next phase
-claude
-@CONTEXT_BOOKINGS_API.md [your prompt]
-```
-
----
-
-## Quick Reference Card
+## Quick Reference
 
 | Command | Purpose |
 |---------|---------|
 | `claude` | Start Claude Code |
-| `@CONTEXT_BOOKINGS_API.md` | Reference context file |
+| `@CONTEXT_TRIPS_API.md` | Reference context in prompt |
 | `@backend/users-api` | Reference existing code |
 | `/exit` | Exit Claude Code |
-| `/help` | Claude Code help |
-| `git checkout -b feature/bookings-api-phase-N-name` | Start phase branch |
+| `git checkout -b feature/trips-api/N-name` | Create branch |
 | `go mod tidy` | Clean dependencies |
-| `go build ./cmd/api` | Verify compilation |
+| `go build ./cmd/api` | Compile |
 | `go test ./... -v` | Run tests |
 | `git push -u origin feature/...` | Push branch |
 
 ---
 
-## Success Indicators
-
-You're doing it right if:
-✅ Each phase takes 2-8 hours
-✅ You understand the plan before approving
-✅ Code compiles after each phase
-✅ Tests pass after implementation
-✅ PRs are small and focused
-✅ You can explain what each file does
-✅ Git history is clean with good commit messages
-
-You need to adjust if:
-❌ Phase takes more than 1 day
-❌ You approve plan without understanding
-❌ Code doesn't compile
-❌ Tests fail and you don't know why
-❌ PRs have 50+ files changed
-❌ You can't explain the code
-❌ Commits are "wip" or "fix"
-
----
-
 Happy coding! 🚀
+
+For more details, see:
+- `CONTEXT_TRIPS_API.md` - Complete specification
+- `GITFLOW.md` - Git workflow
+- `README_DEVELOPMENT.md` - Project overview
