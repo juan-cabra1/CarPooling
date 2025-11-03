@@ -11,7 +11,7 @@ assignees: ''
 **Service:** [service-name]-api
 **Priority:** High/Medium/Low
 **Estimated Time:** X hours
-**Branch:** `feature/[service-name]-api-phase-[N]-[name]`
+**Branch:** `feature/[service-name]/[issue-number]-[short-description]`
 
 ---
 
