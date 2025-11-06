@@ -8,9 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"trips-api/internal/clients"
 	"trips-api/internal/config"
 	"trips-api/internal/database"
 	"trips-api/internal/repository"
+	"trips-api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -40,13 +42,21 @@ func main() {
 
 	// 🔌 Capa de datos: maneja operaciones con MongoDB
 	tripsRepo := repository.NewTripRepository(db)
-	log.Println("✅ Trip repository initialized")
+	eventsRepo := repository.NewEventRepository(db)
+	log.Println("✅ Repositories initialized")
 
-	// TODO: Initialize RabbitMQ and other services in next phase
-	// TODO: Initialize HTTP client for users-api in next phase
-	// TODO: Initialize service layer in next phase
+	// 🌐 Capa de clientes HTTP externos
+	usersClient := clients.NewUsersClient(cfg.UsersAPIURL)
+	log.Println("✅ HTTP clients initialized")
+
+	// 📦 Capa de servicios: lógica de negocio
+	idempotencyService := service.NewIdempotencyService(eventsRepo)
+	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient)
+	log.Println("✅ Services initialized")
+
+	// TODO: Initialize RabbitMQ in next phase
 	// TODO: Initialize controllers in next phase
-	_ = tripsRepo // Mark as used for now
+	_ = tripService // Mark as used for now
 
 	// 🌐 Configurar router HTTP con Gin
 	router := gin.Default()
