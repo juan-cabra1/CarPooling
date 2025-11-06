@@ -8,12 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-	"trips-api/internal/clients"
 	"trips-api/internal/config"
-	"trips-api/internal/controllers"
-	"trips-api/internal/middleware"
+	"trips-api/internal/database"
 	"trips-api/internal/repository"
-	"trips-api/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,51 +27,29 @@ func main() {
 	// Patrón: Repository -> Service -> Controller
 	// Cada capa tiene una responsabilidad específica
 
-	// Context principal de la aplicación
-	ctx := context.Background()
+	// 🔌 Conectar a MongoDB
+	db, err := database.ConnectMongoDB(cfg.Mongo.URI, cfg.Mongo.DB)
+	if err != nil {
+		log.Fatalf("Error conectando a MongoDB: %v", err)
+	}
+
+	// 📋 Crear colecciones e índices
+	if err := database.CreateIndexes(db); err != nil {
+		log.Fatalf("Error creando índices: %v", err)
+	}
 
 	// 🔌 Capa de datos: maneja operaciones con MongoDB
-	tripsMongoRepo, err := repository.NewMongoTripsRepository(
-		ctx,
-		cfg.Mongo.URI,
-		cfg.Mongo.DB,
-		"trips",
-	)
-	if err != nil {
-		log.Fatalf("Error inicializando repositorio de trips: %v", err)
-	}
-	log.Printf("✅ Conexión a MongoDB establecida [%s/%s]", cfg.Mongo.URI, cfg.Mongo.DB)
+	tripsRepo := repository.NewTripRepository(db)
+	log.Println("✅ Trip repository initialized")
 
-	// 📨 Inicializar RabbitMQ para publicar eventos de trips
-	tripsQueue, err := clients.NewRabbitMQClient(
-		cfg.RabbitMQ.URL,
-		"trips.events", // Exchange name
-		"topic",        // Exchange type
-	)
-	if err != nil {
-		log.Fatalf("Error inicializando RabbitMQ: %v", err)
-	}
-	defer tripsQueue.Close()
-	log.Println("✅ Conexión a RabbitMQ establecida")
-
-	// 🌐 Cliente HTTP para comunicación con users-api
-	usersAPIClient := clients.NewUsersAPIClient(cfg.UsersAPIURL, 10*time.Second)
-
-	// 🔧 Capa de lógica de negocio: validaciones, transformaciones
-	tripService := services.NewTripsService(
-		tripsMongoRepo,
-		tripsQueue,
-		usersAPIClient,
-	)
-
-	// 🎮 Capa de controladores: maneja HTTP requests/responses
-	tripController := controllers.NewTripsController(tripService)
+	// TODO: Initialize RabbitMQ and other services in next phase
+	// TODO: Initialize HTTP client for users-api in next phase
+	// TODO: Initialize service layer in next phase
+	// TODO: Initialize controllers in next phase
+	_ = tripsRepo // Mark as used for now
 
 	// 🌐 Configurar router HTTP con Gin
 	router := gin.Default()
-
-	// Middleware: funciones que se ejecutan en cada request
-	router.Use(middleware.CORSMiddleware())
 
 	// 🏥 Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
@@ -85,28 +60,7 @@ func main() {
 		})
 	})
 
-	// 🚗 Rutas de Trips API
-	// Grupo de rutas que requieren autenticación
-	api := router.Group("/api/v1")
-	{
-		// POST /api/v1/trips - crear nuevo viaje (requiere auth)
-		api.POST("/trips", middleware.AuthMiddleware(cfg.JWTSecret), tripController.CreateTrip)
-
-		// GET /api/v1/trips/:id - obtener viaje por ID
-		api.GET("/trips/:id", tripController.GetTripByID)
-
-		// PUT /api/v1/trips/:id - actualizar viaje existente (requiere auth + ownership)
-		api.PUT("/trips/:id", middleware.AuthMiddleware(cfg.JWTSecret), tripController.UpdateTrip)
-
-		// DELETE /api/v1/trips/:id - eliminar viaje (requiere auth + ownership)
-		api.DELETE("/trips/:id", middleware.AuthMiddleware(cfg.JWTSecret), tripController.DeleteTrip)
-
-		// GET /api/v1/trips/user/:userId - obtener viajes de un usuario
-		api.GET("/trips/user/:userId", tripController.GetTripsByUser)
-
-		// POST /api/v1/trips/:id/reserve - endpoint de acción (delega a reservations-api)
-		api.POST("/trips/:id/reserve", middleware.AuthMiddleware(cfg.JWTSecret), tripController.ReserveTrip)
-	}
+	// TODO: Configure API routes in next phase
 
 	// Configuración del server HTTP con timeouts
 	srv := &http.Server{
