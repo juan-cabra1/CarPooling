@@ -3,7 +3,7 @@
 ## Project Overview
 **Academic Project** - CarPooling platform with microservices architecture.
 
-### Requirements (Faculty)
+### Requirements
 - ✅ **MongoDB for trips-api** (main API - this service)
 - ✅ MySQL for users-api and bookings-api
 - ✅ Apache Solr + Memcached for search-api
