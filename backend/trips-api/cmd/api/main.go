@@ -12,6 +12,7 @@ import (
 	"trips-api/internal/config"
 	"trips-api/internal/controller"
 	"trips-api/internal/database"
+	"trips-api/internal/middleware"
 	"trips-api/internal/repository"
 	"trips-api/internal/routes"
 	"trips-api/internal/service"
@@ -72,8 +73,11 @@ func main() {
 	// 🌐 Configurar router HTTP con Gin
 	router := gin.Default()
 
+	// 🔐 Crear JWT middleware
+	jwtMiddleware := middleware.AuthMiddleware(authService)
+
 	// 🚦 Configurar rutas de la aplicación
-	routes.SetupRoutes(router, tripController, authService)
+	routes.SetupRoutes(router, tripController, jwtMiddleware)
 	log.Println("✅ Routes configured")
 
 	// Configuración del server HTTP con timeouts
@@ -90,7 +94,7 @@ func main() {
 	go func() {
 		log.Printf("🚀 Trips API listening on port %s", cfg.ServerPort)
 		log.Printf("🏥 Health check: http://localhost:%s/health", cfg.ServerPort)
-		log.Printf("🚗 Trips API: http://localhost:%s/api/v1/trips", cfg.ServerPort)
+		log.Printf("🚗 Trips API: http://localhost:%s/trips", cfg.ServerPort)
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Error iniciando el servidor: %v", err)

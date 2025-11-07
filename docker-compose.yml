@@ -1,0 +1,254 @@
+# ============================================================================
+# CarPooling System - Docker Compose Configuration
+# ============================================================================
+# This file orchestrates all microservices and infrastructure components
+# for the CarPooling system.
+#
+# Services included:
+# - Infrastructure: MongoDB, RabbitMQ, Memcached
+# - Microservices: trips-api, search-api, bookings-api, users-api
+#
+# Network: All services communicate via 'carpooling-network' bridge network
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # INFRASTRUCTURE SERVICES
+  # ==========================================================================
+
+  # MongoDB - Primary database for trips, bookings, and user data
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb-container
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-carpooling}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-admin123}
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - carpooling-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # RabbitMQ - Message broker for inter-service communication
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: rabbitmq-container
+    restart: unless-stopped
+    ports:
+      - "5672:5672"   # AMQP protocol port
+      - "15672:15672" # Management UI port
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - carpooling-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Memcached - Caching layer for search-api
+  memcached:
+    image: memcached:1.6-alpine
+    container_name: memcached-container
+    restart: unless-stopped
+    command: ["-m", "128"]  # 128MB memory limit
+    ports:
+      - "11211:11211"
+    networks:
+      - carpooling-network
+
+  # ==========================================================================
+  # MICROSERVICES
+  # ==========================================================================
+
+  # Trips API - Manages trip creation, updates, and queries
+  # Technology: Go 1.21 with Gin framework
+  # Port: 8002
+  trips-api:
+    build:
+      context: ./backend/trips-api
+      dockerfile: Dockerfile
+    container_name: trips-api-container
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      # Database configuration
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-admin123}@mongodb:27017/carpooling?authSource=admin
+
+      # Message queue configuration
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+
+      # Security
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+
+      # Server configuration
+      PORT: 8002
+      GIN_MODE: ${GIN_MODE:-release}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - carpooling-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Optional: Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.5'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.25'
+    #       memory: 256M
+
+  # ==========================================================================
+  # OTHER MICROSERVICES (Uncomment and configure as needed)
+  # ==========================================================================
+
+  # Search API - Handles search and filtering of trips
+  # Uncomment when Dockerfile is ready
+  # search-api:
+  #   build:
+  #     context: ./backend/search-api
+  #     dockerfile: Dockerfile
+  #   container_name: search-api-container
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8003:8003"
+  #   environment:
+  #     MONGO_URI: mongodb://mongodb:27017/carpooling
+  #     MEMCACHED_HOST: memcached:11211
+  #     PORT: 8003
+  #   depends_on:
+  #     - mongodb
+  #     - memcached
+  #   networks:
+  #     - carpooling-network
+
+  # Bookings API - Manages booking requests and confirmations
+  # Uncomment when Dockerfile is ready
+  # bookings-api:
+  #   build:
+  #     context: ./backend/bookings-api
+  #     dockerfile: Dockerfile
+  #   container_name: bookings-api-container
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8004:8004"
+  #   environment:
+  #     MONGO_URI: mongodb://mongodb:27017/carpooling
+  #     RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/
+  #     JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+  #     PORT: 8004
+  #   depends_on:
+  #     - mongodb
+  #     - rabbitmq
+  #   networks:
+  #     - carpooling-network
+
+  # Users API - Handles user authentication and profile management
+  # Uncomment when Dockerfile is ready
+  # users-api:
+  #   build:
+  #     context: ./backend/users-api
+  #     dockerfile: Dockerfile
+  #   container_name: users-api-container
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8001:8001"
+  #   environment:
+  #     MONGO_URI: mongodb://mongodb:27017/carpooling
+  #     JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+  #     PORT: 8001
+  #   depends_on:
+  #     - mongodb
+  #   networks:
+  #     - carpooling-network
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  carpooling-network:
+    driver: bridge
+    name: carpooling-network
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+# Persistent storage for databases and services
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  rabbitmq_data:
+    driver: local
+
+# ============================================================================
+# USAGE INSTRUCTIONS
+# ============================================================================
+#
+# 1. Create a .env file in the project root with the following variables:
+#    MONGO_DB=carpooling
+#    MONGO_ROOT_USER=admin
+#    MONGO_ROOT_PASSWORD=secure_password
+#    RABBITMQ_USER=admin
+#    RABBITMQ_PASS=secure_password
+#    JWT_SECRET=your-very-secure-secret-key
+#    GIN_MODE=release
+#    LOG_LEVEL=info
+#
+# 2. Build and start all services:
+#    docker-compose up -d
+#
+# 3. Build and start specific service:
+#    docker-compose up -d trips-api
+#
+# 4. View logs:
+#    docker-compose logs -f trips-api
+#
+# 5. Stop all services:
+#    docker-compose down
+#
+# 6. Stop and remove volumes (WARNING: deletes all data):
+#    docker-compose down -v
+#
+# 7. Rebuild a service after code changes:
+#    docker-compose build trips-api
+#    docker-compose up -d trips-api
+#
+# 8. Access services:
+#    - Trips API: http://localhost:8002
+#    - MongoDB: mongodb://localhost:27017
+#    - RabbitMQ Management: http://localhost:15672
+#    - Memcached: localhost:11211
+#
+# ============================================================================

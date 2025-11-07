@@ -4,41 +4,27 @@ import (
 	"net/http"
 	"time"
 	"trips-api/internal/controller"
-	"trips-api/internal/middleware"
-	"trips-api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 // SetupRoutes configura todas las rutas de la aplicación
-func SetupRoutes(
-	router *gin.Engine,
-	tripController controller.TripController,
-	authService service.AuthService,
-) {
-	// Middlewares globales
-	router.Use(middleware.ErrorHandler())
-	router.Use(middleware.CORSMiddleware())
-
+func SetupRoutes(router *gin.Engine, tripController controller.TripController, jwtMiddleware gin.HandlerFunc) {
 	// Health check endpoint
 	router.GET("/health", healthCheck)
 
-	// API v1
-	v1 := router.Group("/api/v1")
-	{
-		// Rutas públicas de trips (sin autenticación)
-		v1.GET("/trips/:id", tripController.GetTrip)
-		v1.GET("/trips", tripController.ListTrips)
+	// Rutas públicas de trips (sin autenticación)
+	router.GET("/trips", tripController.ListTrips)
+	router.GET("/trips/:id", tripController.GetTrip)
 
-		// Rutas protegidas de trips (requieren autenticación)
-		protectedTrips := v1.Group("/trips")
-		protectedTrips.Use(middleware.AuthMiddleware(authService))
-		{
-			protectedTrips.POST("", tripController.CreateTrip)
-			protectedTrips.PUT("/:id", tripController.UpdateTrip)
-			protectedTrips.DELETE("/:id", tripController.DeleteTrip)
-			protectedTrips.PATCH("/:id/cancel", tripController.CancelTrip)
-		}
+	// Rutas protegidas de trips (requieren autenticación)
+	protected := router.Group("/trips")
+	protected.Use(jwtMiddleware)
+	{
+		protected.POST("", tripController.CreateTrip)
+		protected.PUT("/:id", tripController.UpdateTrip)
+		protected.PATCH("/:id", tripController.UpdateTrip)
+		protected.DELETE("/:id", tripController.DeleteTrip)
 	}
 }
 
