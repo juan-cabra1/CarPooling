@@ -12,6 +12,7 @@ import (
 	"trips-api/internal/config"
 	"trips-api/internal/controller"
 	"trips-api/internal/database"
+	"trips-api/internal/messaging"
 	"trips-api/internal/repository"
 	"trips-api/internal/routes"
 	"trips-api/internal/service"
@@ -57,17 +58,23 @@ func main() {
 	usersClient := clients.NewUsersClient(cfg.UsersAPIURL)
 	log.Println("✅ HTTP clients initialized")
 
+	// 📨 Conectar a RabbitMQ
+	publisher, err := messaging.NewPublisher(cfg.RabbitMQ.URL)
+	if err != nil {
+		log.Fatalf("Error conectando a RabbitMQ: %v", err)
+	}
+	defer publisher.Close()
+	log.Println("✅ RabbitMQ publisher initialized")
+
 	// 📦 Capa de servicios: lógica de negocio
 	idempotencyService := service.NewIdempotencyService(eventsRepo)
-	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient)
+	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient, publisher)
 	log.Println("✅ Services initialized")
 
 	// 🎮 Capa de controladores: HTTP handlers
 	authService := service.NewAuthService(cfg.JWTSecret)
 	tripController := controller.NewTripController(tripService)
 	log.Println("✅ Controllers initialized")
-
-	// TODO: Initialize RabbitMQ in next phase
 
 	// 🌐 Configurar router HTTP con Gin
 	router := gin.Default()
@@ -111,6 +118,11 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Error en shutdown del servidor: %v", err)
+	}
+
+	// Cerrar conexión de RabbitMQ
+	if err := publisher.Close(); err != nil {
+		log.Printf("⚠️  Error cerrando RabbitMQ: %v", err)
 	}
 
 	log.Println("✅ Servidor detenido correctamente")
