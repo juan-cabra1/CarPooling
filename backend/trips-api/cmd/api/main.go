@@ -71,6 +71,31 @@ func main() {
 	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient, publisher)
 	log.Println("✅ Services initialized")
 
+	// 📥 Inicializar RabbitMQ consumer
+	consumer, err := messaging.NewReservationConsumer(
+		cfg.RabbitMQ.URL,
+		tripService,
+		idempotencyService,
+		publisher,
+	)
+	if err != nil {
+		log.Fatalf("Error inicializando consumer: %v", err)
+	}
+	defer consumer.Close()
+	log.Println("✅ RabbitMQ consumer initialized")
+
+	// Crear contexto para consumer (con cancelación)
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+	defer consumerCancel()
+
+	// 🚀 Iniciar consumer en goroutine
+	go func() {
+		log.Println("🔄 Starting reservation events consumer...")
+		if err := consumer.Start(consumerCtx); err != nil {
+			log.Printf("⚠️  Consumer stopped: %v", err)
+		}
+	}()
+
 	// 🎮 Capa de controladores: HTTP handlers
 	authService := service.NewAuthService(cfg.JWTSecret)
 	tripController := controller.NewTripController(tripService)
@@ -120,7 +145,16 @@ func main() {
 		log.Fatalf("Error en shutdown del servidor: %v", err)
 	}
 
-	// Cerrar conexión de RabbitMQ
+	// Cerrar consumer de RabbitMQ
+	log.Println("⚠️  Stopping consumer...")
+	consumerCancel() // Signal consumer to stop
+	time.Sleep(1 * time.Second) // Give consumer time to finish in-flight messages
+
+	if err := consumer.Close(); err != nil {
+		log.Printf("⚠️  Error closing consumer: %v", err)
+	}
+
+	// Cerrar publisher de RabbitMQ
 	if err := publisher.Close(); err != nil {
 		log.Printf("⚠️  Error cerrando RabbitMQ: %v", err)
 	}
