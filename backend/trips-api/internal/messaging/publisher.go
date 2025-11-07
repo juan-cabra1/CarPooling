@@ -17,9 +17,10 @@ const (
 	exchangeType = "topic"
 
 	// Routing keys
-	routingKeyTripCreated   = "trip.created"
-	routingKeyTripUpdated   = "trip.updated"
-	routingKeyTripCancelled = "trip.cancelled"
+	routingKeyTripCreated        = "trip.created"
+	routingKeyTripUpdated        = "trip.updated"
+	routingKeyTripCancelled      = "trip.cancelled"
+	routingKeyReservationFailed  = "reservation.failed"
 
 	// Source service identifier
 	sourceService = "trips-api"
@@ -30,6 +31,7 @@ type Publisher interface {
 	PublishTripCreated(ctx context.Context, trip *domain.Trip)
 	PublishTripUpdated(ctx context.Context, trip *domain.Trip)
 	PublishTripCancelled(ctx context.Context, trip *domain.Trip, cancelledBy int64, reason string)
+	PublishReservationFailure(ctx context.Context, reservationID, tripID, reason string, availableSeats int)
 	Close() error
 }
 
@@ -137,6 +139,23 @@ func (p *publisher) PublishTripCancelled(ctx context.Context, trip *domain.Trip,
 	}
 
 	p.publish(ctx, routingKeyTripCancelled, event)
+}
+
+// PublishReservationFailure publica un evento de compensación cuando falla una reserva
+func (p *publisher) PublishReservationFailure(ctx context.Context, reservationID, tripID, reason string, availableSeats int) {
+	event := ReservationFailedEvent{
+		EventID:        uuid.New().String(),
+		EventType:      routingKeyReservationFailed,
+		ReservationID:  reservationID,
+		TripID:         tripID,
+		Reason:         reason,
+		AvailableSeats: availableSeats,
+		SourceService:  sourceService,
+		CorrelationID:  getCorrelationID(ctx),
+		Timestamp:      time.Now(),
+	}
+
+	p.publish(ctx, routingKeyReservationFailed, event)
 }
 
 // publish es el método interno que serializa y publica eventos a RabbitMQ
