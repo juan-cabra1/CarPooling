@@ -6,6 +6,7 @@ import (
 	"time"
 	"trips-api/internal/clients"
 	"trips-api/internal/domain"
+	"trips-api/internal/messaging"
 	"trips-api/internal/repository"
 
 	"github.com/rs/zerolog/log"
@@ -36,6 +37,7 @@ type tripService struct {
 	tripRepo           repository.TripRepository
 	idempotencyService IdempotencyService
 	usersClient        clients.UsersClient
+	publisher          messaging.Publisher
 }
 
 // NewTripService crea una nueva instancia del servicio de viajes
@@ -43,11 +45,13 @@ func NewTripService(
 	tripRepo repository.TripRepository,
 	idempotencyService IdempotencyService,
 	usersClient clients.UsersClient,
+	publisher messaging.Publisher,
 ) TripService {
 	return &tripService{
 		tripRepo:           tripRepo,
 		idempotencyService: idempotencyService,
 		usersClient:        usersClient,
+		publisher:          publisher,
 	}
 }
 
@@ -135,6 +139,10 @@ func (s *tripService) CreateTrip(ctx context.Context, driverID int64, request do
 	}
 
 	log.Info().Str("trip_id", trip.ID.Hex()).Int64("driver_id", driverID).Msg("Trip created")
+
+	// Publicar evento trip.created (fire-and-forget)
+	s.publisher.PublishTripCreated(ctx, trip)
+
 	return trip, nil
 }
 
@@ -264,6 +272,10 @@ func (s *tripService) UpdateTrip(ctx context.Context, tripID string, userID int6
 	}
 
 	log.Info().Str("trip_id", tripID).Int64("user_id", userID).Msg("Trip updated")
+
+	// Publicar evento trip.updated (fire-and-forget)
+	s.publisher.PublishTripUpdated(ctx, trip)
+
 	return trip, nil
 }
 
@@ -320,8 +332,15 @@ func (s *tripService) CancelTrip(ctx context.Context, tripID string, userID int6
 
 	log.Info().Str("trip_id", tripID).Int64("user_id", userID).Str("reason", request.Reason).Msg("Trip cancelled")
 
-	// TODO (Fase 5): Publicar evento trip.cancelled a RabbitMQ
-	// rabbitmq.PublishEvent("trip.cancelled", tripID, ...)
+	// Obtener el trip actualizado para publicar el evento con el estado correcto
+	cancelledTrip, err := s.tripRepo.FindByID(ctx, tripID)
+	if err != nil {
+		log.Error().Err(err).Str("trip_id", tripID).Msg("Failed to fetch cancelled trip for event publishing")
+		// No retornamos el error porque el trip ya fue cancelado exitosamente
+	} else {
+		// Publicar evento trip.cancelled (fire-and-forget)
+		s.publisher.PublishTripCancelled(ctx, cancelledTrip, userID, request.Reason)
+	}
 
 	return nil
 }
