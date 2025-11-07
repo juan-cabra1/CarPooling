@@ -15,9 +15,15 @@ import (
 	"trips-api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 )
 
 func main() {
+	// 🔧 Configurar zerolog para logging estructurado en JSON
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	zlog.Logger = zlog.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 	// 📋 Cargar configuración desde las variables de entorno
 	cfg, err := config.LoadConfig()
 	if err != nil {

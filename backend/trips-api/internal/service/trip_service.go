@@ -7,6 +7,8 @@ import (
 	"trips-api/internal/clients"
 	"trips-api/internal/domain"
 	"trips-api/internal/repository"
+
+	"github.com/rs/zerolog/log"
 )
 
 // TripService define las operaciones de lógica de negocio para viajes
@@ -128,9 +130,11 @@ func (s *tripService) CreateTrip(ctx context.Context, driverID int64, request do
 
 	// Crear el trip en la base de datos
 	if err := s.tripRepo.Create(ctx, trip); err != nil {
+		log.Error().Err(err).Int64("driver_id", driverID).Msg("Failed to create trip")
 		return nil, fmt.Errorf("failed to create trip: %w", err)
 	}
 
+	log.Info().Str("trip_id", trip.ID.Hex()).Int64("driver_id", driverID).Msg("Trip created")
 	return trip, nil
 }
 
@@ -255,9 +259,11 @@ func (s *tripService) UpdateTrip(ctx context.Context, tripID string, userID int6
 
 	// Actualizar en la base de datos
 	if err := s.tripRepo.Update(ctx, tripID, trip); err != nil {
+		log.Error().Err(err).Str("trip_id", tripID).Int64("user_id", userID).Msg("Failed to update trip")
 		return nil, fmt.Errorf("failed to update trip: %w", err)
 	}
 
+	log.Info().Str("trip_id", tripID).Int64("user_id", userID).Msg("Trip updated")
 	return trip, nil
 }
 
@@ -308,8 +314,11 @@ func (s *tripService) CancelTrip(ctx context.Context, tripID string, userID int6
 
 	// Cancelar usando el método del repositorio
 	if err := s.tripRepo.Cancel(ctx, tripID, userID, request.Reason); err != nil {
+		log.Error().Err(err).Str("trip_id", tripID).Int64("user_id", userID).Msg("Failed to cancel trip")
 		return fmt.Errorf("failed to cancel trip: %w", err)
 	}
+
+	log.Info().Str("trip_id", tripID).Int64("user_id", userID).Str("reason", request.Reason).Msg("Trip cancelled")
 
 	// TODO (Fase 5): Publicar evento trip.cancelled a RabbitMQ
 	// rabbitmq.PublishEvent("trip.cancelled", tripID, ...)

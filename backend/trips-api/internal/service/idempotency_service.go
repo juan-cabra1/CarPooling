@@ -6,6 +6,8 @@ import (
 	"time"
 	"trips-api/internal/domain"
 	"trips-api/internal/repository"
+
+	"github.com/rs/zerolog/log"
 )
 
 // IdempotencyService define las operaciones para garantizar idempotencia en el procesamiento de eventos
@@ -62,6 +64,7 @@ func (s *idempotencyService) CheckAndMarkEvent(ctx context.Context, eventID, eve
 
 	// Si ya fue procesado, retornar false (saltar procesamiento)
 	if isProcessed {
+		log.Info().Str("event_id", eventID).Str("event_type", eventType).Msg("Event already processed")
 		return false, nil
 	}
 
@@ -78,9 +81,11 @@ func (s *idempotencyService) CheckAndMarkEvent(ctx context.Context, eventID, eve
 		// IMPORTANTE: Si MarkEventProcessed retorna error, NO es necesariamente un error fatal.
 		// El repositorio maneja duplicate key errors internamente y retorna nil.
 		// Si llegamos aquí con error, es un error real de sistema.
+		log.Error().Err(err).Str("event_id", eventID).Str("event_type", eventType).Msg("Failed to mark event as processed")
 		return false, fmt.Errorf("failed to mark event as processed: %w", err)
 	}
 
+	log.Info().Str("event_id", eventID).Str("event_type", eventType).Msg("Event marked as processed")
 	// Evento marcado exitosamente como procesado, se debe procesar
 	return true, nil
 }
