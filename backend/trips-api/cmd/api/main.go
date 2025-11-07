@@ -10,8 +10,10 @@ import (
 	"time"
 	"trips-api/internal/clients"
 	"trips-api/internal/config"
+	"trips-api/internal/controller"
 	"trips-api/internal/database"
 	"trips-api/internal/repository"
+	"trips-api/internal/routes"
 	"trips-api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -60,23 +62,19 @@ func main() {
 	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient)
 	log.Println("✅ Services initialized")
 
+	// 🎮 Capa de controladores: HTTP handlers
+	authService := service.NewAuthService(cfg.JWTSecret)
+	tripController := controller.NewTripController(tripService)
+	log.Println("✅ Controllers initialized")
+
 	// TODO: Initialize RabbitMQ in next phase
-	// TODO: Initialize controllers in next phase
-	_ = tripService // Mark as used for now
 
 	// 🌐 Configurar router HTTP con Gin
 	router := gin.Default()
 
-	// 🏥 Health check endpoint
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":    "ok",
-			"service":   "trips-api",
-			"timestamp": time.Now().Format(time.RFC3339),
-		})
-	})
-
-	// TODO: Configure API routes in next phase
+	// 🚦 Configurar rutas de la aplicación
+	routes.SetupRoutes(router, tripController, authService)
+	log.Println("✅ Routes configured")
 
 	// Configuración del server HTTP con timeouts
 	srv := &http.Server{
