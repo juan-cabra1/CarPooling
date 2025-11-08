@@ -10,6 +10,7 @@ import (
 
 	"bookings-api/internal/config"
 	"bookings-api/internal/controller"
+	"bookings-api/internal/database"
 	"bookings-api/internal/routes"
 
 	"github.com/gin-gonic/gin"
@@ -54,6 +55,32 @@ func main() {
 		Str("port", cfg.ServerPort).
 		Str("environment", cfg.Environment).
 		Msg("✅ Configuration loaded successfully")
+
+	// ============================================================================
+	// DATABASE INITIALIZATION
+	// ============================================================================
+	// Initialize MySQL database connection using GORM
+	// This must be done BEFORE initializing repositories and services
+	// Database is used for:
+	//   - Storing booking records (bookings table)
+	//   - Event idempotency tracking (processed_events table)
+	db, err := database.InitDB(cfg)
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("❌ Failed to initialize database connection")
+	}
+	log.Info().Msg("✅ Database connection established")
+
+	// Run auto-migrations to create/update database tables
+	// This creates tables if they don't exist and adds new columns
+	// Safe to run on every startup (won't delete existing data)
+	if err := database.AutoMigrate(db); err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("❌ Failed to run database migrations")
+	}
+	log.Info().Msg("✅ Database migrations completed")
 
 	// ============================================================================
 	// GIN ROUTER INITIALIZATION
@@ -173,6 +200,15 @@ func main() {
 		log.Fatal().
 			Err(err).
 			Msg("❌ Server forced to shutdown")
+	}
+
+	// Close database connection
+	// Release all database connections in the pool
+	// This prevents connection leaks and ensures clean shutdown
+	if err := database.CloseDB(db); err != nil {
+		log.Error().
+			Err(err).
+			Msg("⚠️  Error closing database connection")
 	}
 
 	log.Info().Msg("✅ Server gracefully stopped")
