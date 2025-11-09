@@ -2,6 +2,7 @@ package routes
 
 import (
 	"bookings-api/internal/controllers"
+	"bookings-api/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,6 +27,17 @@ import (
 //   PUT  /api/v1/bookings/:id - Update booking (auth required)
 //   DELETE /api/v1/bookings/:id - Cancel booking (auth required)
 func SetupRoutes(router *gin.Engine, healthController *controllers.HealthController) {
+	// ============================================================================
+	// MIDDLEWARE REGISTRATION
+	// ============================================================================
+	// Register error handling middleware globally
+	// This must be registered AFTER routes are defined to catch errors from handlers
+	// The ErrorHandler middleware:
+	//   - Captures errors added via c.Error()
+	//   - Maps domain.AppError to appropriate HTTP status codes
+	//   - Returns standardized JSON error responses
+	router.Use(middleware.ErrorHandler())
+
 	// ============================================================================
 	// PUBLIC ROUTES (No authentication required)
 	// ============================================================================

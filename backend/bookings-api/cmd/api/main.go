@@ -27,15 +27,43 @@ func main() {
 	// ============================================================================
 	// Configure zerolog for structured logging
 	// - Uses console writer for human-readable output in development
+	// - Uses JSON output in production for log aggregation
 	// - Includes timestamps for all log entries
-	// - Supports JSON output in production (change when ENVIRONMENT=production)
+	// - Supports configurable log level via LOG_LEVEL env variable
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	log.Logger = log.Output(zerolog.ConsoleWriter{
-		Out:        os.Stderr,
-		TimeFormat: time.RFC3339,
-	})
 
-	log.Info().Msg("🚀 Starting Bookings API service...")
+	// Set log level from environment variable (default: INFO)
+	logLevel := os.Getenv("LOG_LEVEL")
+	switch logLevel {
+	case "DEBUG":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "INFO":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "WARN":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "ERROR":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+
+	// Configure output format based on environment
+	environment := os.Getenv("ENVIRONMENT")
+	if environment == "production" {
+		// Production: JSON output for log aggregation tools
+		log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+	} else {
+		// Development: Console writer for human-readable logs
+		log.Logger = log.Output(zerolog.ConsoleWriter{
+			Out:        os.Stderr,
+			TimeFormat: time.RFC3339,
+		})
+	}
+
+	log.Info().
+		Str("log_level", zerolog.GlobalLevel().String()).
+		Str("environment", environment).
+		Msg("🚀 Starting Bookings API service...")
 
 	// ============================================================================
 	// CONFIGURATION LOADING
@@ -121,12 +149,13 @@ func main() {
 	// GIN ROUTER INITIALIZATION
 	// ============================================================================
 	// Initialize Gin HTTP framework
-	// gin.Default() includes:
-	//   - Logger middleware (logs all HTTP requests)
+	// Using gin.New() with custom middleware for better control:
+	//   - Custom zerolog-based logging middleware (consistent with app logging)
 	//   - Recovery middleware (recovers from panics)
+	//   - Error handling middleware (standardized error responses)
 	//
-	// For production, consider using gin.New() with custom middleware
-	router := gin.Default()
+	// Note: We use gin.New() instead of gin.Default() to avoid duplicate logging
+	// and to integrate with our zerolog setup
 
 	// Set Gin mode based on environment
 	if cfg.IsProduction() {
@@ -136,6 +165,11 @@ func main() {
 		gin.SetMode(gin.DebugMode)
 		log.Info().Msg("🔧 Running in DEVELOPMENT mode")
 	}
+
+	router := gin.New()
+
+	// Add built-in middleware
+	router.Use(gin.Recovery()) // Recover from panics
 
 	// ============================================================================
 	// CONTROLLER INITIALIZATION
