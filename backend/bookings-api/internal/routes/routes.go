@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"bookings-api/internal/controller"
+	"bookings-api/internal/controllers"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,7 +25,7 @@ import (
 //   POST /api/v1/bookings     - Create new booking (auth required)
 //   PUT  /api/v1/bookings/:id - Update booking (auth required)
 //   DELETE /api/v1/bookings/:id - Cancel booking (auth required)
-func SetupRoutes(router *gin.Engine, healthController *controller.HealthController) {
+func SetupRoutes(router *gin.Engine, healthController *controllers.HealthController) {
 	// ============================================================================
 	// PUBLIC ROUTES (No authentication required)
 	// ============================================================================
