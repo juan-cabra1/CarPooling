@@ -34,6 +34,11 @@ type Config struct {
 	// Values: "development", "staging", "production"
 	// Affects logging verbosity and error handling behavior
 	Environment string
+
+	// TripsAPIURL is the base URL for the trips-api microservice
+	// Format: http://host:port (no trailing slash)
+	// Example: "http://localhost:8002" or "http://trips-api:8002"
+	TripsAPIURL string
 }
 
 // LoadConfig reads configuration from environment variables
@@ -44,6 +49,7 @@ type Config struct {
 //   - DATABASE_URL: MySQL connection DSN (required)
 //   - JWT_SECRET: JWT signing secret (required in production)
 //   - RABBITMQ_URL: RabbitMQ connection URL (required)
+//   - TRIPS_API_URL: Base URL for trips-api (default: "http://localhost:8002")
 //   - ENVIRONMENT: deployment environment (default: "development")
 //
 // Returns:
@@ -65,6 +71,7 @@ func LoadConfig() (*Config, error) {
 		DatabaseURL: getEnv("DATABASE_URL", ""),
 		JWTSecret:   getEnv("JWT_SECRET", ""),
 		RabbitMQURL: getEnv("RABBITMQ_URL", ""),
+		TripsAPIURL: getEnv("TRIPS_API_URL", "http://localhost:8002"),
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}
 
@@ -92,6 +99,11 @@ func (c *Config) Validate() error {
 	// Check JWTSecret is set (critical for security)
 	if c.JWTSecret == "" {
 		return fmt.Errorf("JWT_SECRET is required")
+	}
+
+	// Check TripsAPIURL is set
+	if c.TripsAPIURL == "" {
+		return fmt.Errorf("TRIPS_API_URL is required")
 	}
 
 	// Warn if using development environment in production

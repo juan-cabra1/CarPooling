@@ -1,0 +1,320 @@
+package services
+
+import (
+	"bookings-api/internal/clients"
+	"bookings-api/internal/dao"
+	"bookings-api/internal/domain"
+	"bookings-api/internal/repository"
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
+)
+
+// BookingService defines the interface for booking business operations
+type BookingService interface {
+	// CreateBooking creates a new booking with validation
+	CreateBooking(ctx context.Context, req domain.CreateBookingRequest) (*domain.BookingResponse, error)
+
+	// GetBooking retrieves a booking by ID
+	GetBooking(ctx context.Context, bookingID string) (*domain.BookingResponse, error)
+
+	// GetPassengerBookings retrieves all bookings for a passenger with pagination
+	GetPassengerBookings(ctx context.Context, passengerID int64, page, limit int) (*domain.BookingListResponse, error)
+
+	// CancelBooking cancels a booking (must be passenger or driver)
+	CancelBooking(ctx context.Context, bookingID string, userID int64, reason string) error
+}
+
+// bookingService implements BookingService
+type bookingService struct {
+	bookingRepo repository.BookingRepository
+	tripsClient clients.TripsClient
+}
+
+// NewBookingService creates a new BookingService with dependency injection
+func NewBookingService(
+	bookingRepo repository.BookingRepository,
+	tripsClient clients.TripsClient,
+) BookingService {
+	return &bookingService{
+		bookingRepo: bookingRepo,
+		tripsClient: tripsClient,
+	}
+}
+
+// CreateBooking creates a new booking with full validation
+func (s *bookingService) CreateBooking(ctx context.Context, req domain.CreateBookingRequest) (*domain.BookingResponse, error) {
+	log.Info().
+		Str("trip_id", req.TripID).
+		Int64("passenger_id", req.PassengerID).
+		Int("seats_reserved", req.SeatsReserved).
+		Msg("Creating booking")
+
+	// Step 1: Call trips-api to get trip details
+	trip, err := s.tripsClient.GetTrip(ctx, req.TripID)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("trip_id", req.TripID).
+			Msg("Failed to get trip from trips-api")
+		return nil, err
+	}
+
+	log.Debug().
+		Str("trip_id", trip.ID).
+		Int64("driver_id", trip.DriverID).
+		Str("status", trip.Status).
+		Int("available_seats", trip.AvailableSeats).
+		Float64("price_per_seat", trip.PricePerSeat).
+		Msg("Trip details retrieved")
+
+	// Step 2: Validate trip status is 'published'
+	if !trip.IsPublished() {
+		log.Warn().
+			Str("trip_id", req.TripID).
+			Str("status", trip.Status).
+			Msg("Cannot book trip: not published")
+		return nil, domain.ErrTripNotPublished.WithDetails(map[string]interface{}{
+			"trip_id":       req.TripID,
+			"trip_status":   trip.Status,
+			"required_status": domain.TripStatusPublished,
+		})
+	}
+
+	// Step 3: Validate passenger is NOT the driver
+	if req.PassengerID == trip.DriverID {
+		log.Warn().
+			Str("trip_id", req.TripID).
+			Int64("passenger_id", req.PassengerID).
+			Int64("driver_id", trip.DriverID).
+			Msg("Cannot book own trip")
+		return nil, domain.ErrCannotBookOwnTrip.WithDetails(map[string]interface{}{
+			"trip_id":      req.TripID,
+			"passenger_id": req.PassengerID,
+			"driver_id":    trip.DriverID,
+		})
+	}
+
+	// Step 4: Validate sufficient seats available
+	if !trip.HasAvailableSeats(req.SeatsReserved) {
+		log.Warn().
+			Str("trip_id", req.TripID).
+			Int("requested_seats", req.SeatsReserved).
+			Int("available_seats", trip.AvailableSeats).
+			Msg("Insufficient seats available")
+		return nil, domain.ErrInsufficientSeats.WithDetails(map[string]interface{}{
+			"trip_id":         req.TripID,
+			"requested_seats": req.SeatsReserved,
+			"available_seats": trip.AvailableSeats,
+		})
+	}
+
+	// Step 5: Check for existing bookings (no duplicate bookings for same passenger+trip)
+	existingBookings, err := s.bookingRepo.FindByTripID(req.TripID)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("trip_id", req.TripID).
+			Msg("Failed to check for existing bookings")
+		return nil, fmt.Errorf("failed to check existing bookings: %w", err)
+	}
+
+	for _, existingBooking := range existingBookings {
+		if existingBooking.PassengerID == req.PassengerID &&
+			!existingBooking.IsCancelled() &&
+			!existingBooking.IsFailed() {
+			log.Warn().
+				Str("trip_id", req.TripID).
+				Int64("passenger_id", req.PassengerID).
+				Str("existing_booking_id", existingBooking.BookingUUID).
+				Msg("Duplicate booking detected")
+			return nil, domain.ErrDuplicateBooking.WithDetails(map[string]interface{}{
+				"trip_id":             req.TripID,
+				"passenger_id":        req.PassengerID,
+				"existing_booking_id": existingBooking.BookingUUID,
+			})
+		}
+	}
+
+	// Step 6: Calculate total price
+	totalPrice := trip.CalculateTotalPrice(req.SeatsReserved)
+
+	log.Debug().
+		Int("seats", req.SeatsReserved).
+		Float64("price_per_seat", trip.PricePerSeat).
+		Float64("total_price", totalPrice).
+		Msg("Calculated booking price")
+
+	// Step 7: Create booking entity
+	booking := &dao.Booking{
+		// BookingUUID will be auto-generated by GORM BeforeCreate hook
+		TripID:         req.TripID,
+		PassengerID:    req.PassengerID,
+		SeatsRequested: req.SeatsReserved,
+		TotalPrice:     totalPrice,
+		Status:         dao.BookingStatusPending,
+		// CreatedAt and UpdatedAt will be auto-managed by GORM
+	}
+
+	// Step 8: Save to database
+	if err := s.bookingRepo.Create(booking); err != nil {
+		log.Error().
+			Err(err).
+			Str("trip_id", req.TripID).
+			Int64("passenger_id", req.PassengerID).
+			Msg("Failed to create booking in database")
+		return nil, fmt.Errorf("failed to create booking: %w", err)
+	}
+
+	log.Info().
+		Str("booking_id", booking.BookingUUID).
+		Str("trip_id", booking.TripID).
+		Int64("passenger_id", booking.PassengerID).
+		Int("seats", booking.SeatsRequested).
+		Float64("total_price", booking.TotalPrice).
+		Msg("Booking created successfully")
+
+	// Step 9: Return response DTO
+	return domain.ToBookingResponse(booking), nil
+}
+
+// GetBooking retrieves a booking by ID
+func (s *bookingService) GetBooking(ctx context.Context, bookingID string) (*domain.BookingResponse, error) {
+	log.Debug().Str("booking_id", bookingID).Msg("Getting booking")
+
+	booking, err := s.bookingRepo.FindByID(bookingID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warn().Str("booking_id", bookingID).Msg("Booking not found")
+			return nil, domain.ErrBookingNotFound.WithDetails(map[string]interface{}{
+				"booking_id": bookingID,
+			})
+		}
+		log.Error().Err(err).Str("booking_id", bookingID).Msg("Failed to get booking")
+		return nil, fmt.Errorf("failed to get booking: %w", err)
+	}
+
+	return domain.ToBookingResponse(booking), nil
+}
+
+// GetPassengerBookings retrieves all bookings for a passenger with pagination
+func (s *bookingService) GetPassengerBookings(ctx context.Context, passengerID int64, page, limit int) (*domain.BookingListResponse, error) {
+	log.Debug().
+		Int64("passenger_id", passengerID).
+		Int("page", page).
+		Int("limit", limit).
+		Msg("Getting passenger bookings")
+
+	// Validate pagination parameters
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10 // Default limit
+	}
+
+	bookings, total, err := s.bookingRepo.FindByPassengerID(passengerID, page, limit)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Int64("passenger_id", passengerID).
+			Msg("Failed to get passenger bookings")
+		return nil, fmt.Errorf("failed to get passenger bookings: %w", err)
+	}
+
+	log.Info().
+		Int64("passenger_id", passengerID).
+		Int64("total", total).
+		Int("returned", len(bookings)).
+		Msg("Retrieved passenger bookings")
+
+	return domain.NewBookingListResponse(bookings, total, page, limit), nil
+}
+
+// CancelBooking cancels a booking (authorization check: must be passenger or driver)
+func (s *bookingService) CancelBooking(ctx context.Context, bookingID string, userID int64, reason string) error {
+	log.Info().
+		Str("booking_id", bookingID).
+		Int64("user_id", userID).
+		Str("reason", reason).
+		Msg("Cancelling booking")
+
+	// Step 1: Get the booking
+	booking, err := s.bookingRepo.FindByID(bookingID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warn().Str("booking_id", bookingID).Msg("Booking not found")
+			return domain.ErrBookingNotFound.WithDetails(map[string]interface{}{
+				"booking_id": bookingID,
+			})
+		}
+		log.Error().Err(err).Str("booking_id", bookingID).Msg("Failed to get booking")
+		return fmt.Errorf("failed to get booking: %w", err)
+	}
+
+	// Step 2: Get trip details to verify if user is driver
+	trip, err := s.tripsClient.GetTrip(ctx, booking.TripID)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("trip_id", booking.TripID).
+			Msg("Failed to get trip for cancellation authorization check")
+		return err
+	}
+
+	// Step 3: Authorization check - must be passenger or driver
+	isPassenger := booking.PassengerID == userID
+	isDriver := trip.DriverID == userID
+
+	if !isPassenger && !isDriver {
+		log.Warn().
+			Str("booking_id", bookingID).
+			Int64("user_id", userID).
+			Int64("passenger_id", booking.PassengerID).
+			Int64("driver_id", trip.DriverID).
+			Msg("Unauthorized cancellation attempt")
+		return domain.ErrUnauthorized.WithDetails(map[string]interface{}{
+			"booking_id": bookingID,
+			"user_id":    userID,
+		})
+	}
+
+	// Step 4: Validate booking can be cancelled (cannot cancel completed bookings)
+	if booking.IsCompleted() {
+		log.Warn().
+			Str("booking_id", bookingID).
+			Str("status", booking.Status).
+			Msg("Cannot cancel completed booking")
+		return domain.ErrCannotCancelCompleted.WithDetails(map[string]interface{}{
+			"booking_id": bookingID,
+			"status":     booking.Status,
+		})
+	}
+
+	// Step 5: Check if already cancelled
+	if booking.IsCancelled() {
+		log.Info().Str("booking_id", bookingID).Msg("Booking already cancelled")
+		return nil // Idempotent: already cancelled is not an error
+	}
+
+	// Step 6: Cancel the booking
+	if err := s.bookingRepo.CancelBooking(bookingID, reason); err != nil {
+		log.Error().
+			Err(err).
+			Str("booking_id", bookingID).
+			Msg("Failed to cancel booking")
+		return fmt.Errorf("failed to cancel booking: %w", err)
+	}
+
+	log.Info().
+		Str("booking_id", bookingID).
+		Int64("user_id", userID).
+		Bool("is_passenger", isPassenger).
+		Bool("is_driver", isDriver).
+		Msg("Booking cancelled successfully")
+
+	return nil
+}
