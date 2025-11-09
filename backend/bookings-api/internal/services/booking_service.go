@@ -78,8 +78,8 @@ func (s *bookingService) CreateBooking(ctx context.Context, req domain.CreateBoo
 			Str("status", trip.Status).
 			Msg("Cannot book trip: not published")
 		return nil, domain.ErrTripNotPublished.WithDetails(map[string]interface{}{
-			"trip_id":       req.TripID,
-			"trip_status":   trip.Status,
+			"trip_id":         req.TripID,
+			"trip_status":     trip.Status,
 			"required_status": domain.TripStatusPublished,
 		})
 	}
