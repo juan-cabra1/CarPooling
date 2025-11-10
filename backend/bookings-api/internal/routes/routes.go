@@ -37,6 +37,10 @@ func SetupRoutes(
 	// ============================================================================
 	// MIDDLEWARE REGISTRATION
 	// ============================================================================
+	// Apply CORS middleware first to set headers on all responses
+	// This allows frontend applications to make cross-origin requests
+	router.Use(middleware.CORSMiddleware())
+
 	// Register error handling middleware globally
 	// This must be registered AFTER routes are defined to catch errors from handlers
 	// The ErrorHandler middleware:
