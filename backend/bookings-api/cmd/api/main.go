@@ -12,6 +12,7 @@ import (
 	"bookings-api/internal/config"
 	"bookings-api/internal/controller"
 	"bookings-api/internal/database"
+	"bookings-api/internal/messaging"
 	"bookings-api/internal/repository"
 	"bookings-api/internal/routes"
 	"bookings-api/internal/service"
@@ -140,13 +141,54 @@ func main() {
 	// AuthService: JWT token validation for authentication middleware
 	authService := service.NewAuthService(cfg.JWTSecret)
 
-	// IdempotencyService: Used by RabbitMQ consumer (Issue #5) to prevent duplicate event processing
-	_ = service.NewIdempotencyService(eventRepo)
+	// IdempotencyService: Used by RabbitMQ consumer to prevent duplicate event processing
+	idempotencyService := service.NewIdempotencyService(eventRepo)
 
-	// BookingService: Will be used by BookingController (Issue #6) for HTTP endpoints
-	_ = service.NewBookingService(bookingRepo, tripsClient)
+	// BookingService: Handles business logic for booking operations
+	bookingService := service.NewBookingService(bookingRepo, tripsClient)
 
 	log.Info().Msg("✅ Services initialized (ready for controllers and consumers)")
+
+	// ============================================================================
+	// RABBITMQ CONSUMER INITIALIZATION
+	// ============================================================================
+	// Initialize RabbitMQ consumer for trip events
+	// Consumer handles:
+	//   - trip.cancelled: Cancels all confirmed bookings for cancelled trips
+	//   - reservation.failed: Marks bookings as failed when seat reservation fails
+	//
+	// Consumer features:
+	//   - Idempotency: Prevents duplicate event processing using event_id
+	//   - Manual ACK: Only acknowledges after successful processing
+	//   - Prefetch: Processes 10 messages concurrently for better throughput
+	//   - Graceful shutdown: Stops cleanly on SIGINT/SIGTERM
+	consumer, err := messaging.NewTripsConsumer(
+		cfg.RabbitMQURL,
+		bookingRepo,
+		idempotencyService,
+	)
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("❌ Failed to initialize RabbitMQ consumer")
+	}
+	log.Info().
+		Str("rabbitmq_url", cfg.RabbitMQURL).
+		Msg("✅ RabbitMQ consumer initialized")
+
+	// Start consumer in background goroutine
+	// This allows the consumer to process messages concurrently with HTTP requests
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+	defer consumerCancel()
+
+	go func() {
+		log.Info().Msg("🐰 Starting RabbitMQ consumer...")
+		if err := consumer.Start(consumerCtx); err != nil {
+			log.Error().
+				Err(err).
+				Msg("❌ RabbitMQ consumer stopped with error")
+		}
+	}()
 
 	// ============================================================================
 	// GIN ROUTER INITIALIZATION
@@ -181,6 +223,7 @@ func main() {
 	// Controllers handle HTTP requests and responses
 	// Each controller is responsible for a specific domain (health, bookings, etc.)
 	healthController := controller.NewHealthController("bookings-api", cfg.ServerPort)
+	bookingController := controller.NewBookingController(bookingService)
 	log.Info().Msg("✅ Controllers initialized")
 
 	// ============================================================================
@@ -191,7 +234,7 @@ func main() {
 	// This includes:
 	//   - Health check endpoint (GET /health)
 	//   - Booking management endpoints (protected by JWT authentication)
-	routes.SetupRoutes(router, healthController, authService)
+	routes.SetupRoutes(router, healthController, bookingController, authService)
 	log.Info().Msg("✅ Routes registered")
 
 	// ============================================================================
@@ -266,12 +309,31 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Attempt graceful shutdown
+	// Attempt graceful shutdown of HTTP server
 	// This will wait for active connections to finish (up to 15 seconds)
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatal().
 			Err(err).
 			Msg("❌ Server forced to shutdown")
+	}
+	log.Info().Msg("✅ HTTP server stopped")
+
+	// Stop RabbitMQ consumer
+	// Cancel consumer context to stop processing new messages
+	// Wait for in-flight messages to complete
+	log.Info().Msg("⏳ Stopping RabbitMQ consumer...")
+	consumerCancel()
+
+	// Give consumer time to finish processing current messages
+	time.Sleep(2 * time.Second)
+
+	// Close RabbitMQ connection
+	if err := consumer.Close(); err != nil {
+		log.Error().
+			Err(err).
+			Msg("⚠️  Error closing RabbitMQ connection")
+	} else {
+		log.Info().Msg("✅ RabbitMQ consumer stopped")
 	}
 
 	// Close database connection
@@ -281,6 +343,8 @@ func main() {
 		log.Error().
 			Err(err).
 			Msg("⚠️  Error closing database connection")
+	} else {
+		log.Info().Msg("✅ Database connection closed")
 	}
 
 	log.Info().Msg("✅ Server gracefully stopped")
