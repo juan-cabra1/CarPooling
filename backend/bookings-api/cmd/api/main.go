@@ -10,11 +10,11 @@ import (
 
 	"bookings-api/internal/clients"
 	"bookings-api/internal/config"
-	"bookings-api/internal/controllers"
+	"bookings-api/internal/controller"
 	"bookings-api/internal/database"
 	"bookings-api/internal/repository"
 	"bookings-api/internal/routes"
-	"bookings-api/internal/services"
+	"bookings-api/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -137,11 +137,14 @@ func main() {
 	// Create service instances with dependency injection
 	// Services contain business logic and orchestrate repositories and clients
 
+	// AuthService: JWT token validation for authentication middleware
+	authService := service.NewAuthService(cfg.JWTSecret)
+
 	// IdempotencyService: Used by RabbitMQ consumer (Issue #5) to prevent duplicate event processing
-	_ = services.NewIdempotencyService(eventRepo)
+	_ = service.NewIdempotencyService(eventRepo)
 
 	// BookingService: Will be used by BookingController (Issue #6) for HTTP endpoints
-	_ = services.NewBookingService(bookingRepo, tripsClient)
+	_ = service.NewBookingService(bookingRepo, tripsClient)
 
 	log.Info().Msg("✅ Services initialized (ready for controllers and consumers)")
 
@@ -177,7 +180,7 @@ func main() {
 	// Create controller instances
 	// Controllers handle HTTP requests and responses
 	// Each controller is responsible for a specific domain (health, bookings, etc.)
-	healthController := controllers.NewHealthController("bookings-api", cfg.ServerPort)
+	healthController := controller.NewHealthController("bookings-api", cfg.ServerPort)
 	log.Info().Msg("✅ Controllers initialized")
 
 	// ============================================================================
@@ -187,8 +190,8 @@ func main() {
 	// Routes define the API endpoints and map them to controller methods
 	// This includes:
 	//   - Health check endpoint (GET /health)
-	//   - Booking management endpoints (to be added)
-	routes.SetupRoutes(router, healthController)
+	//   - Booking management endpoints (protected by JWT authentication)
+	routes.SetupRoutes(router, healthController, authService)
 	log.Info().Msg("✅ Routes registered")
 
 	// ============================================================================

@@ -1,8 +1,9 @@
 package routes
 
 import (
-	"bookings-api/internal/controllers"
+	"bookings-api/internal/controller"
 	"bookings-api/internal/middleware"
+	"bookings-api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,15 +19,15 @@ import (
 // Parameters:
 //   - router: The Gin engine instance to register routes on
 //   - healthController: Controller for health check endpoints
+//   - authService: Service for JWT token validation
 //
 // Route structure:
 //   GET  /health              - Service health check (public)
 //   GET  /api/v1/bookings     - List all bookings (auth required)
 //   GET  /api/v1/bookings/:id - Get specific booking (auth required)
 //   POST /api/v1/bookings     - Create new booking (auth required)
-//   PUT  /api/v1/bookings/:id - Update booking (auth required)
-//   DELETE /api/v1/bookings/:id - Cancel booking (auth required)
-func SetupRoutes(router *gin.Engine, healthController *controllers.HealthController) {
+//   PATCH /api/v1/bookings/:id/cancel - Cancel booking (auth required)
+func SetupRoutes(router *gin.Engine, healthController *controller.HealthController, authService service.AuthService) {
 	// ============================================================================
 	// MIDDLEWARE REGISTRATION
 	// ============================================================================
@@ -48,21 +49,32 @@ func SetupRoutes(router *gin.Engine, healthController *controllers.HealthControl
 	router.GET("/health", healthController.HealthCheck)
 
 	// ============================================================================
-	// API v1 ROUTES (Authentication required - to be added later)
+	// API v1 ROUTES (Authentication required)
 	// ============================================================================
-	// Future routes will be added here:
-	//
-	// v1 := router.Group("/api/v1")
-	// {
-	//     // Booking routes
-	//     bookings := v1.Group("/bookings")
-	//     bookings.Use(authMiddleware) // JWT authentication
-	//     {
-	//         bookings.GET("", bookingController.ListBookings)
-	//         bookings.GET("/:id", bookingController.GetBooking)
-	//         bookings.POST("", bookingController.CreateBooking)
-	//         bookings.PUT("/:id", bookingController.UpdateBooking)
-	//         bookings.DELETE("/:id", bookingController.CancelBooking)
-	//     }
-	// }
+	// Protected routes that require JWT authentication
+	// All booking-related endpoints require a valid JWT token
+	// The AuthMiddleware extracts user_id, email, and role from the token
+
+	v1 := router.Group("/api/v1")
+	{
+		// Booking routes - all protected by JWT authentication
+		bookings := v1.Group("/bookings")
+		bookings.Use(middleware.AuthMiddleware(authService)) // JWT authentication
+		{
+			// Placeholder endpoint to demonstrate JWT protection
+			// This will return 200 OK if JWT is valid, 401 if not
+			bookings.GET("/protected", func(c *gin.Context) {
+				c.JSON(200, gin.H{
+					"success": true,
+					"message": "JWT authentication is working! This endpoint is protected.",
+				})
+			})
+
+			// TODO: Implement these endpoints in Issue #6
+			// bookings.GET("", bookingController.ListBookings)
+			// bookings.GET("/:id", bookingController.GetBooking)
+			// bookings.POST("", bookingController.CreateBooking)
+			// bookings.PATCH("/:id/cancel", bookingController.CancelBooking)
+		}
+	}
 }
