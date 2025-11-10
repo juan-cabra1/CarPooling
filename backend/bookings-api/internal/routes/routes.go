@@ -19,6 +19,7 @@ import (
 // Parameters:
 //   - router: The Gin engine instance to register routes on
 //   - healthController: Controller for health check endpoints
+//   - bookingController: Controller for booking management endpoints
 //   - authService: Service for JWT token validation
 //
 // Route structure:
@@ -27,7 +28,12 @@ import (
 //   GET  /api/v1/bookings/:id - Get specific booking (auth required)
 //   POST /api/v1/bookings     - Create new booking (auth required)
 //   PATCH /api/v1/bookings/:id/cancel - Cancel booking (auth required)
-func SetupRoutes(router *gin.Engine, healthController *controller.HealthController, authService service.AuthService) {
+func SetupRoutes(
+	router *gin.Engine,
+	healthController *controller.HealthController,
+	bookingController *controller.BookingController,
+	authService service.AuthService,
+) {
 	// ============================================================================
 	// MIDDLEWARE REGISTRATION
 	// ============================================================================
@@ -61,20 +67,11 @@ func SetupRoutes(router *gin.Engine, healthController *controller.HealthControll
 		bookings := v1.Group("/bookings")
 		bookings.Use(middleware.AuthMiddleware(authService)) // JWT authentication
 		{
-			// Placeholder endpoint to demonstrate JWT protection
-			// This will return 200 OK if JWT is valid, 401 if not
-			bookings.GET("/protected", func(c *gin.Context) {
-				c.JSON(200, gin.H{
-					"success": true,
-					"message": "JWT authentication is working! This endpoint is protected.",
-				})
-			})
-
-			// TODO: Implement these endpoints in Issue #6
-			// bookings.GET("", bookingController.ListBookings)
-			// bookings.GET("/:id", bookingController.GetBooking)
-			// bookings.POST("", bookingController.CreateBooking)
-			// bookings.PATCH("/:id/cancel", bookingController.CancelBooking)
+			// Booking CRUD endpoints
+			bookings.GET("", bookingController.ListBookings)           // List user's bookings
+			bookings.GET("/:id", bookingController.GetBooking)         // Get specific booking
+			bookings.POST("", bookingController.CreateBooking)         // Create new booking
+			bookings.PATCH("/:id/cancel", bookingController.CancelBooking) // Cancel booking
 		}
 	}
 }
