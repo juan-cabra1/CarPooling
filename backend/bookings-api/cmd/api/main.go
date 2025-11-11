@@ -13,6 +13,7 @@ import (
 	"bookings-api/internal/controller"
 	"bookings-api/internal/database"
 	"bookings-api/internal/messaging"
+	"bookings-api/internal/publisher"
 	"bookings-api/internal/repository"
 	"bookings-api/internal/routes"
 	"bookings-api/internal/service"
@@ -115,6 +116,29 @@ func main() {
 	log.Info().Msg("✅ Database migrations completed")
 
 	// ============================================================================
+	// RABBITMQ PUBLISHER INITIALIZATION
+	// ============================================================================
+	// Initialize RabbitMQ publisher for reservation events
+	// Publisher emits events to trips-api when:
+	//   - reservation.created: New booking created (trips-api decrements seats)
+	//   - reservation.cancelled: Booking cancelled (trips-api increments seats)
+	//
+	// Publisher features:
+	//   - Persistent messages (survive RabbitMQ restart)
+	//   - Topic exchange: "bookings.events"
+	//   - Structured logging with zerolog
+	//   - Graceful error handling (no panics)
+	reservationPublisher, err := publisher.NewReservationPublisher(cfg, log.Logger)
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("❌ Failed to initialize RabbitMQ publisher")
+	}
+	log.Info().
+		Str("exchange", "bookings.events").
+		Msg("✅ RabbitMQ publisher initialized")
+
+	// ============================================================================
 	// REPOSITORY INITIALIZATION (Data Layer)
 	// ============================================================================
 	// Create repository instances for data access
@@ -145,7 +169,8 @@ func main() {
 	idempotencyService := service.NewIdempotencyService(eventRepo)
 
 	// BookingService: Handles business logic for booking operations
-	bookingService := service.NewBookingService(bookingRepo, tripsClient)
+	// Injected dependencies: repository, trips-api client, RabbitMQ publisher
+	bookingService := service.NewBookingService(bookingRepo, tripsClient, reservationPublisher)
 
 	log.Info().Msg("✅ Services initialized (ready for controllers and consumers)")
 
@@ -327,13 +352,24 @@ func main() {
 	// Give consumer time to finish processing current messages
 	time.Sleep(2 * time.Second)
 
-	// Close RabbitMQ connection
+	// Close RabbitMQ consumer connection
 	if err := consumer.Close(); err != nil {
 		log.Error().
 			Err(err).
-			Msg("⚠️  Error closing RabbitMQ connection")
+			Msg("⚠️  Error closing RabbitMQ consumer connection")
 	} else {
 		log.Info().Msg("✅ RabbitMQ consumer stopped")
+	}
+
+	// Close RabbitMQ publisher connection
+	// This closes the publishing channel and connection gracefully
+	log.Info().Msg("⏳ Stopping RabbitMQ publisher...")
+	if err := reservationPublisher.Close(); err != nil {
+		log.Error().
+			Err(err).
+			Msg("⚠️  Error closing RabbitMQ publisher connection")
+	} else {
+		log.Info().Msg("✅ RabbitMQ publisher stopped")
 	}
 
 	// Close database connection

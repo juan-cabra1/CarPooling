@@ -4,6 +4,7 @@ import (
 	"bookings-api/internal/clients"
 	"bookings-api/internal/dao"
 	"bookings-api/internal/domain"
+	"bookings-api/internal/publisher"
 	"bookings-api/internal/repository"
 	"context"
 	"errors"
@@ -32,16 +33,19 @@ type BookingService interface {
 type bookingService struct {
 	bookingRepo repository.BookingRepository
 	tripsClient clients.TripsClient
+	publisher   *publisher.ReservationPublisher
 }
 
 // NewBookingService creates a new BookingService with dependency injection
 func NewBookingService(
 	bookingRepo repository.BookingRepository,
 	tripsClient clients.TripsClient,
+	pub *publisher.ReservationPublisher,
 ) BookingService {
 	return &bookingService{
 		bookingRepo: bookingRepo,
 		tripsClient: tripsClient,
+		publisher:   pub,
 	}
 }
 
@@ -175,9 +179,33 @@ func (s *bookingService) CreateBooking(ctx context.Context, req domain.CreateBoo
 		Int64("passenger_id", booking.PassengerID).
 		Int("seats", booking.SeatsRequested).
 		Float64("total_price", booking.TotalPrice).
-		Msg("Booking created successfully")
+		Msg("✅ Booking created successfully")
 
-	// Step 9: Return response DTO
+	// Step 9: Publish reservation.created event to RabbitMQ
+	// IMPORTANT: Eventual consistency pattern - if publish fails, DON'T rollback database
+	// The booking is already saved (source of truth), event is just a notification
+	if err := s.publisher.PublishReservationCreated(
+		booking.TripID,
+		booking.SeatsRequested,
+		booking.BookingUUID,
+	); err != nil {
+		// Log error but DON'T return error to user
+		// Database is source of truth, event publish failure doesn't invalidate booking
+		log.Error().
+			Err(err).
+			Str("booking_id", booking.BookingUUID).
+			Str("trip_id", booking.TripID).
+			Int("seats_reserved", booking.SeatsRequested).
+			Msg("⚠️  Booking created but failed to publish reservation.created event (eventual consistency)")
+		// Continue and return success - trips-api can sync via reconciliation if needed
+	} else {
+		log.Info().
+			Str("booking_id", booking.BookingUUID).
+			Str("event_type", "reservation.created").
+			Msg("✅ Reservation event published successfully")
+	}
+
+	// Step 10: Return response DTO
 	return domain.ToBookingResponse(booking), nil
 }
 
@@ -314,7 +342,31 @@ func (s *bookingService) CancelBooking(ctx context.Context, bookingID string, us
 		Int64("user_id", userID).
 		Bool("is_passenger", isPassenger).
 		Bool("is_driver", isDriver).
-		Msg("Booking cancelled successfully")
+		Msg("✅ Booking cancelled successfully")
+
+	// Step 7: Publish reservation.cancelled event to RabbitMQ
+	// IMPORTANT: Eventual consistency pattern - if publish fails, DON'T rollback database
+	// The booking is already cancelled (source of truth), event is just a notification
+	if err := s.publisher.PublishReservationCancelled(
+		booking.TripID,
+		booking.SeatsRequested,
+		booking.BookingUUID,
+	); err != nil {
+		// Log error but DON'T return error to user
+		// Database is source of truth, event publish failure doesn't invalidate cancellation
+		log.Error().
+			Err(err).
+			Str("booking_id", booking.BookingUUID).
+			Str("trip_id", booking.TripID).
+			Int("seats_released", booking.SeatsRequested).
+			Msg("⚠️  Booking cancelled but failed to publish reservation.cancelled event (eventual consistency)")
+		// Continue and return success - trips-api can sync via reconciliation if needed
+	} else {
+		log.Info().
+			Str("booking_id", booking.BookingUUID).
+			Str("event_type", "reservation.cancelled").
+			Msg("✅ Reservation cancelled event published successfully")
+	}
 
 	return nil
 }
