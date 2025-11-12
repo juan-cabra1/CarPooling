@@ -33,14 +33,14 @@ type BookingService interface {
 type bookingService struct {
 	bookingRepo repository.BookingRepository
 	tripsClient clients.TripsClient
-	publisher   *publisher.ReservationPublisher
+	publisher   publisher.Publisher
 }
 
 // NewBookingService creates a new BookingService with dependency injection
 func NewBookingService(
 	bookingRepo repository.BookingRepository,
 	tripsClient clients.TripsClient,
-	pub *publisher.ReservationPublisher,
+	pub publisher.Publisher,
 ) BookingService {
 	return &bookingService{
 		bookingRepo: bookingRepo,

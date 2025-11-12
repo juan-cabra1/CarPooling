@@ -59,6 +59,23 @@ const (
 )
 
 // ============================================================================
+// RESERVATION PUBLISHER INTERFACE
+// ============================================================================
+
+// Publisher defines the interface for publishing reservation events to RabbitMQ
+// This interface allows for easy mocking in tests without requiring actual RabbitMQ connection
+type Publisher interface {
+	// PublishReservationCreated publishes a reservation.created event
+	PublishReservationCreated(tripID string, seatsReserved int, reservationID string) error
+
+	// PublishReservationCancelled publishes a reservation.cancelled event
+	PublishReservationCancelled(tripID string, seatsReleased int, reservationID string) error
+
+	// Close closes the RabbitMQ connection and channel
+	Close() error
+}
+
+// ============================================================================
 // RESERVATION PUBLISHER STRUCT
 // ============================================================================
 
