@@ -84,6 +84,10 @@ type ReservationCreatedEvent struct {
 	// This is a MongoDB ObjectID (string) from trips-api
 	TripID string `json:"trip_id"`
 
+	// PassengerID identifies the passenger who created the reservation
+	// Used by trips-api to send confirmation events back to bookings-api
+	PassengerID int64 `json:"passenger_id"`
+
 	// SeatsReserved indicates how many seats were reserved
 	// trips-api will decrement available_seats by this amount
 	// Must be > 0 and <= trip.available_seats

@@ -191,3 +191,84 @@ func (c *TripsConsumer) HandleReservationFailed(body []byte) error {
 
 	return nil
 }
+
+// HandleReservationConfirmed processes reservation.confirmed events
+// Updates booking status from pending to confirmed and sets total price
+func (c *TripsConsumer) HandleReservationConfirmed(body []byte) error {
+	var event ReservationConfirmedEvent
+	if err := json.Unmarshal(body, &event); err != nil {
+		log.Error().
+			Err(err).
+			Str("raw_body", string(body)).
+			Msg("Failed to unmarshal reservation.confirmed event")
+		// Return nil to ACK - malformed JSON can't be reprocessed
+		return nil
+	}
+
+	log.Info().
+		Str("event_id", event.EventID).
+		Str("event_type", event.EventType).
+		Str("reservation_id", event.ReservationID).
+		Str("trip_id", event.TripID).
+		Str("correlation_id", event.CorrelationID).
+		Int("seats_reserved", event.SeatsReserved).
+		Float64("total_price", event.TotalPrice).
+		Msg("Processing reservation.confirmed event")
+
+	// Check idempotency - skip if already processed
+	shouldProcess, err := c.idempotencyService.CheckAndMarkEvent(event.EventID, event.EventType)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("event_id", event.EventID).
+			Msg("Idempotency check failed")
+		return fmt.Errorf("idempotency check failed: %w", err)
+	}
+
+	if !shouldProcess {
+		log.Info().
+			Str("event_id", event.EventID).
+			Str("reservation_id", event.ReservationID).
+			Msg("Event already processed, skipping")
+		return nil
+	}
+
+	// Find booking by reservation_id (booking_uuid)
+	booking, err := c.bookingRepo.FindByID(event.ReservationID)
+	if err != nil {
+		// Idempotent behavior: if booking doesn't exist, ACK silently
+		// This handles race conditions where event arrives before booking creation
+		log.Warn().
+			Err(err).
+			Str("reservation_id", event.ReservationID).
+			Str("trip_id", event.TripID).
+			Msg("Booking not found for confirmed reservation, acknowledging")
+		return nil
+	}
+
+	// Update booking status to confirmed and set total price
+	booking.Status = dao.BookingStatusConfirmed
+	booking.TotalPrice = event.TotalPrice
+
+	err = c.bookingRepo.Update(booking)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("booking_id", booking.BookingUUID).
+			Str("trip_id", event.TripID).
+			Float64("total_price", event.TotalPrice).
+			Msg("Failed to update booking status to confirmed")
+		return fmt.Errorf("failed to update booking: %w", err)
+	}
+
+	log.Info().
+		Str("event_id", event.EventID).
+		Str("booking_id", booking.BookingUUID).
+		Str("trip_id", event.TripID).
+		Int64("passenger_id", booking.PassengerID).
+		Int("seats_reserved", event.SeatsReserved).
+		Float64("total_price", event.TotalPrice).
+		Msg("✅ Booking confirmed successfully with price")
+
+	return nil
+}

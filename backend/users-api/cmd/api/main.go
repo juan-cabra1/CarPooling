@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"users-api/internal/config"
 	"users-api/internal/controller"
@@ -23,15 +22,7 @@ func main() {
 	}
 
 	// 2. Conectar a MySQL usando GORM
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.DBUser,
-		cfg.DBPassword,
-		cfg.DBHost,
-		cfg.DBPort,
-		cfg.DBName,
-	)
-
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(mysql.Open(cfg.DatabaseURL), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("Error conectando a la base de datos: %v", err)
 	}

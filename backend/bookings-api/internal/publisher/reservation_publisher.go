@@ -261,13 +261,14 @@ func NewReservationPublisher(cfg *config.Config, logger zerolog.Logger) (*Reserv
 // Idempotency:
 // Each event gets a unique event_id (UUID v4). If trips-api receives
 // the same event_id twice, it will skip processing.
-func (p *ReservationPublisher) PublishReservationCreated(tripID string, seatsReserved int, reservationID string) error {
+func (p *ReservationPublisher) PublishReservationCreated(tripID string, passengerID int64, seatsReserved int, reservationID string) error {
 	// ========================================================================
 	// STEP 1: Create event structure
 	// ========================================================================
 	event := events.ReservationCreatedEvent{
 		BaseEvent:     events.NewBaseEvent(events.EventTypeReservationCreated),
 		TripID:        tripID,
+		PassengerID:   passengerID,
 		SeatsReserved: seatsReserved,
 		ReservationID: reservationID,
 	}

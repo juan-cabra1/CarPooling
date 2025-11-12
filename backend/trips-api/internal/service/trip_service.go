@@ -15,7 +15,8 @@ import (
 // TripService define las operaciones de lógica de negocio para viajes
 type TripService interface {
 	// CreateTrip crea un nuevo viaje con validaciones de negocio
-	CreateTrip(ctx context.Context, driverID int64, request domain.CreateTripRequest) (*domain.Trip, error)
+	// authToken: JWT token for validating driver against users-api (format: "Bearer {token}")
+	CreateTrip(ctx context.Context, driverID int64, authToken string, request domain.CreateTripRequest) (*domain.Trip, error)
 
 	// GetTrip obtiene un viaje por su ID
 	GetTrip(ctx context.Context, tripID string) (*domain.Trip, error)
@@ -85,7 +86,7 @@ func NewTripService(
 //	    }
 //	    return c.JSON(500, gin.H{"error": err.Error()})
 //	}
-func (s *tripService) CreateTrip(ctx context.Context, driverID int64, request domain.CreateTripRequest) (*domain.Trip, error) {
+func (s *tripService) CreateTrip(ctx context.Context, driverID int64, authToken string, request domain.CreateTripRequest) (*domain.Trip, error) {
 	// Validación 1: Parsear fecha de salida
 	departureTime, err := time.Parse(time.RFC3339, request.DepartureDatetime)
 	if err != nil {
@@ -113,8 +114,8 @@ func (s *tripService) CreateTrip(ctx context.Context, driverID int64, request do
 		return nil, fmt.Errorf("total_seats must be between 1 and 8")
 	}
 
-	// Validación 6: Verificar que el driver existe en users-api
-	_, err = s.usersClient.GetUser(ctx, driverID)
+	// Validación 6: Verificar que el driver existe en users-api (forward auth token)
+	_, err = s.usersClient.GetUser(ctx, driverID, authToken)
 	if err != nil {
 		// Si es ErrDriverNotFound, mantener ese error específico
 		return nil, fmt.Errorf("failed to validate driver: %w", err)
@@ -399,22 +400,38 @@ func (s *tripService) ProcessReservationCreated(ctx context.Context, event messa
 		return fmt.Errorf("failed to update availability: %w", err) // System error - NACK
 	}
 
-	// 3. Success - fetch updated trip and publish trip.updated event
+	// 3. Success - fetch updated trip and publish events
 	updatedTrip, err := s.tripRepo.FindByID(ctx, event.TripID)
 	if err != nil {
 		log.Error().Err(err).Str("trip_id", event.TripID).Msg("Failed to fetch updated trip")
 		// Don't fail - seats already updated
 	} else {
+		// Calculate total price for the reservation
+		totalPrice := updatedTrip.PricePerSeat * float64(event.SeatsReserved)
+
+		// Publish reservation.confirmed event back to bookings-api
+		s.publisher.PublishReservationConfirmation(
+			ctx,
+			event.ReservationID,
+			event.TripID,
+			event.PassengerID,
+			event.SeatsReserved,
+			totalPrice,
+			updatedTrip.AvailableSeats,
+		)
+
+		// Publish trip.updated event for other consumers
 		s.publisher.PublishTripUpdated(ctx, updatedTrip)
 	}
 
 	log.Info().
 		Str("trip_id", event.TripID).
 		Str("reservation_id", event.ReservationID).
+		Int64("passenger_id", event.PassengerID).
 		Int("seats_reserved", event.SeatsReserved).
 		Int("available_seats", updatedTrip.AvailableSeats).
 		Int("reserved_seats", updatedTrip.ReservedSeats).
-		Msg("Reservation created successfully")
+		Msg("✅ Reservation confirmed successfully - confirmation event published")
 
 	return nil // ACK
 }

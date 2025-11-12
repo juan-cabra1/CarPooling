@@ -34,6 +34,7 @@ type ReservationCreatedEvent struct {
 	EventID       string    `json:"event_id"`        // UUID v4 - CRÍTICO para idempotencia
 	EventType     string    `json:"event_type"`      // "reservation.created"
 	TripID        string    `json:"trip_id"`         // MongoDB ObjectID como string
+	PassengerID   int64     `json:"passenger_id"`    // ID del pasajero
 	SeatsReserved int       `json:"seats_reserved"`  // Número de asientos a reservar
 	ReservationID string    `json:"reservation_id"`  // UUID de bookings-api
 	Timestamp     time.Time `json:"timestamp"`       // Timestamp del evento
@@ -61,6 +62,21 @@ type ReservationFailedEvent struct {
 	TripID         string    `json:"trip_id"`         // MongoDB ObjectID como string
 	Reason         string    `json:"reason"`          // "No seats available" | "Version conflict"
 	AvailableSeats int       `json:"available_seats"` // Cantidad actual de asientos disponibles
+	SourceService  string    `json:"source_service"`  // "trips-api"
+	CorrelationID  string    `json:"correlation_id"`  // Para tracing de requests
+	Timestamp      time.Time `json:"timestamp"`       // Timestamp del evento
+}
+
+// ReservationConfirmedEvent representa un evento de confirmación de reserva exitosa
+type ReservationConfirmedEvent struct {
+	EventID        string    `json:"event_id"`        // Nuevo UUID v4
+	EventType      string    `json:"event_type"`      // "reservation.confirmed"
+	ReservationID  string    `json:"reservation_id"`  // UUID de la reserva confirmada
+	TripID         string    `json:"trip_id"`         // MongoDB ObjectID como string
+	PassengerID    int64     `json:"passenger_id"`    // ID del pasajero
+	SeatsReserved  int       `json:"seats_reserved"`  // Número de asientos reservados
+	TotalPrice     float64   `json:"total_price"`     // Precio total de la reserva
+	AvailableSeats int       `json:"available_seats"` // Asientos disponibles después de reserva
 	SourceService  string    `json:"source_service"`  // "trips-api"
 	CorrelationID  string    `json:"correlation_id"`  // Para tracing de requests
 	Timestamp      time.Time `json:"timestamp"`       // Timestamp del evento

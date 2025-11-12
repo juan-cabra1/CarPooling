@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	exchangeName    = "trips.events"
-	exchangeType    = "topic"
-	queueName       = "bookings.trip-events"
-	prefetchCount   = 10
+	exchangeName        = "trips.events"
+	exchangeType        = "topic"
+	queueName           = "bookings.trip-events"
+	prefetchCount       = 10
 	routingKeyCancelled = "trip.cancelled"
 	routingKeyFailed    = "reservation.failed"
+	routingKeyConfirmed = "reservation.confirmed"
 )
 
 // TripsConsumer handles RabbitMQ messages from trips-api
@@ -106,6 +107,20 @@ func NewTripsConsumer(
 		return nil, fmt.Errorf("failed to bind queue for reservation.failed: %w", err)
 	}
 
+	// Bind queue to exchange for reservation.confirmed events
+	err = channel.QueueBind(
+		queue.Name,          // queue name
+		routingKeyConfirmed, // routing key
+		exchangeName,        // exchange
+		false,               // no-wait
+		nil,                 // arguments
+	)
+	if err != nil {
+		channel.Close()
+		conn.Close()
+		return nil, fmt.Errorf("failed to bind queue for reservation.confirmed: %w", err)
+	}
+
 	// Set QoS prefetch count
 	err = channel.Qos(
 		prefetchCount, // prefetch count
@@ -186,6 +201,8 @@ func (c *TripsConsumer) handleMessage(msg amqp.Delivery) {
 		err = c.HandleTripCancelled(msg.Body)
 	case routingKeyFailed:
 		err = c.HandleReservationFailed(msg.Body)
+	case routingKeyConfirmed:
+		err = c.HandleReservationConfirmed(msg.Body)
 	default:
 		log.Warn().
 			Str("routing_key", msg.RoutingKey).

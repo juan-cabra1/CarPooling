@@ -3,7 +3,7 @@
 # ============================================================================
 # Purpose: Compile the Go application with all optimizations
 # Base image: golang:1.23-alpine for minimal build environment
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Metadata labels
 LABEL maintainer="CarPooling Team"

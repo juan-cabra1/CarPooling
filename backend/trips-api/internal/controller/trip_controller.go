@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"trips-api/internal/domain"
 	"trips-api/internal/service"
 
@@ -44,6 +45,25 @@ func (ctrl *tripController) CreateTrip(c *gin.Context) {
 		return
 	}
 
+	// Extraer Authorization header para forwarding a users-api
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		c.JSON(401, gin.H{
+			"success": false,
+			"error":   "token de autenticación requerido",
+		})
+		return
+	}
+
+	// Validar formato del header (debe ser "Bearer {token}")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		c.JSON(401, gin.H{
+			"success": false,
+			"error":   "formato de token inválido",
+		})
+		return
+	}
+
 	// Bind request body a CreateTripRequest
 	var request domain.CreateTripRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -54,8 +74,8 @@ func (ctrl *tripController) CreateTrip(c *gin.Context) {
 		return
 	}
 
-	// Llamar al servicio
-	trip, err := ctrl.tripService.CreateTrip(c.Request.Context(), userID.(int64), request)
+	// Llamar al servicio (forward complete Authorization header)
+	trip, err := ctrl.tripService.CreateTrip(c.Request.Context(), userID.(int64), authHeader, request)
 	if err != nil {
 		handleServiceError(c, err)
 		return

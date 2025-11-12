@@ -17,10 +17,11 @@ const (
 	exchangeType = "topic"
 
 	// Routing keys
-	routingKeyTripCreated        = "trip.created"
-	routingKeyTripUpdated        = "trip.updated"
-	routingKeyTripCancelled      = "trip.cancelled"
-	routingKeyReservationFailed  = "reservation.failed"
+	routingKeyTripCreated          = "trip.created"
+	routingKeyTripUpdated          = "trip.updated"
+	routingKeyTripCancelled        = "trip.cancelled"
+	routingKeyReservationFailed    = "reservation.failed"
+	routingKeyReservationConfirmed = "reservation.confirmed"
 
 	// Source service identifier
 	sourceService = "trips-api"
@@ -156,6 +157,25 @@ func (p *publisher) PublishReservationFailure(ctx context.Context, reservationID
 	}
 
 	p.publish(ctx, routingKeyReservationFailed, event)
+}
+
+// PublishReservationConfirmation publica un evento de confirmación cuando una reserva es exitosa
+func (p *publisher) PublishReservationConfirmation(ctx context.Context, reservationID, tripID string, passengerID int64, seatsReserved int, totalPrice float64, availableSeats int) {
+	event := ReservationConfirmedEvent{
+		EventID:        uuid.New().String(),
+		EventType:      routingKeyReservationConfirmed,
+		ReservationID:  reservationID,
+		TripID:         tripID,
+		PassengerID:    passengerID,
+		SeatsReserved:  seatsReserved,
+		TotalPrice:     totalPrice,
+		AvailableSeats: availableSeats,
+		SourceService:  sourceService,
+		CorrelationID:  getCorrelationID(ctx),
+		Timestamp:      time.Now(),
+	}
+
+	p.publish(ctx, routingKeyReservationConfirmed, event)
 }
 
 // publish es el método interno que serializa y publica eventos a RabbitMQ
