@@ -12,6 +12,8 @@ import (
 	"trips-api/internal/config"
 	"trips-api/internal/controller"
 	"trips-api/internal/database"
+	"trips-api/internal/messaging"
+	"trips-api/internal/middleware"
 	"trips-api/internal/repository"
 	"trips-api/internal/routes"
 	"trips-api/internal/service"
@@ -57,23 +59,57 @@ func main() {
 	usersClient := clients.NewUsersClient(cfg.UsersAPIURL)
 	log.Println("✅ HTTP clients initialized")
 
+	// 📨 Conectar a RabbitMQ
+	publisher, err := messaging.NewPublisher(cfg.RabbitMQ.URL)
+	if err != nil {
+		log.Fatalf("Error conectando a RabbitMQ: %v", err)
+	}
+	defer publisher.Close()
+	log.Println("✅ RabbitMQ publisher initialized")
+
 	// 📦 Capa de servicios: lógica de negocio
 	idempotencyService := service.NewIdempotencyService(eventsRepo)
-	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient)
+	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient, publisher)
 	log.Println("✅ Services initialized")
+
+	// 📥 Inicializar RabbitMQ consumer
+	consumer, err := messaging.NewReservationConsumer(
+		cfg.RabbitMQ.URL,
+		tripService,
+		idempotencyService,
+		publisher,
+	)
+	if err != nil {
+		log.Fatalf("Error inicializando consumer: %v", err)
+	}
+	defer consumer.Close()
+	log.Println("✅ RabbitMQ consumer initialized")
+
+	// Crear contexto para consumer (con cancelación)
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+	defer consumerCancel()
+
+	// 🚀 Iniciar consumer en goroutine
+	go func() {
+		log.Println("🔄 Starting reservation events consumer...")
+		if err := consumer.Start(consumerCtx); err != nil {
+			log.Printf("⚠️  Consumer stopped: %v", err)
+		}
+	}()
 
 	// 🎮 Capa de controladores: HTTP handlers
 	authService := service.NewAuthService(cfg.JWTSecret)
 	tripController := controller.NewTripController(tripService)
 	log.Println("✅ Controllers initialized")
 
-	// TODO: Initialize RabbitMQ in next phase
-
 	// 🌐 Configurar router HTTP con Gin
 	router := gin.Default()
 
+	// 🔐 Crear JWT middleware
+	jwtMiddleware := middleware.AuthMiddleware(authService)
+
 	// 🚦 Configurar rutas de la aplicación
-	routes.SetupRoutes(router, tripController, authService)
+	routes.SetupRoutes(router, tripController, jwtMiddleware)
 	log.Println("✅ Routes configured")
 
 	// Configuración del server HTTP con timeouts
@@ -90,7 +126,7 @@ func main() {
 	go func() {
 		log.Printf("🚀 Trips API listening on port %s", cfg.ServerPort)
 		log.Printf("🏥 Health check: http://localhost:%s/health", cfg.ServerPort)
-		log.Printf("🚗 Trips API: http://localhost:%s/api/v1/trips", cfg.ServerPort)
+		log.Printf("🚗 Trips API: http://localhost:%s/trips", cfg.ServerPort)
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Error iniciando el servidor: %v", err)
@@ -111,6 +147,20 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Error en shutdown del servidor: %v", err)
+	}
+
+	// Cerrar consumer de RabbitMQ
+	log.Println("⚠️  Stopping consumer...")
+	consumerCancel() // Signal consumer to stop
+	time.Sleep(1 * time.Second) // Give consumer time to finish in-flight messages
+
+	if err := consumer.Close(); err != nil {
+		log.Printf("⚠️  Error closing consumer: %v", err)
+	}
+
+	// Cerrar publisher de RabbitMQ
+	if err := publisher.Close(); err != nil {
+		log.Printf("⚠️  Error cerrando RabbitMQ: %v", err)
 	}
 
 	log.Println("✅ Servidor detenido correctamente")

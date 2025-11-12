@@ -20,8 +20,9 @@ type User struct {
 // UsersClient define las operaciones para interactuar con users-api
 type UsersClient interface {
 	// GetUser obtiene información de un usuario por su ID
+	// authToken: JWT token para autenticación en users-api (format: "Bearer {token}")
 	// Retorna domain.ErrDriverNotFound si el usuario no existe
-	GetUser(ctx context.Context, userID int64) (*User, error)
+	GetUser(ctx context.Context, userID int64, authToken string) (*User, error)
 }
 
 type usersHTTPClient struct {
@@ -66,7 +67,7 @@ type usersAPIResponse struct {
 //	    }
 //	    return fmt.Errorf("failed to validate driver: %w", err)
 //	}
-func (c *usersHTTPClient) GetUser(ctx context.Context, userID int64) (*User, error) {
+func (c *usersHTTPClient) GetUser(ctx context.Context, userID int64, authToken string) (*User, error) {
 	// Construir URL del endpoint
 	url := fmt.Sprintf("%s/users/%d", c.baseURL, userID)
 
@@ -74,6 +75,11 @@ func (c *usersHTTPClient) GetUser(ctx context.Context, userID int64) (*User, err
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Forward Authorization header to users-api
+	if authToken != "" {
+		req.Header.Set("Authorization", authToken)
 	}
 
 	// Ejecutar request

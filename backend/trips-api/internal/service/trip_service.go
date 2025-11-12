@@ -6,6 +6,7 @@ import (
 	"time"
 	"trips-api/internal/clients"
 	"trips-api/internal/domain"
+	"trips-api/internal/messaging"
 	"trips-api/internal/repository"
 
 	"github.com/rs/zerolog/log"
@@ -14,7 +15,8 @@ import (
 // TripService define las operaciones de lógica de negocio para viajes
 type TripService interface {
 	// CreateTrip crea un nuevo viaje con validaciones de negocio
-	CreateTrip(ctx context.Context, driverID int64, request domain.CreateTripRequest) (*domain.Trip, error)
+	// authToken: JWT token for validating driver against users-api (format: "Bearer {token}")
+	CreateTrip(ctx context.Context, driverID int64, authToken string, request domain.CreateTripRequest) (*domain.Trip, error)
 
 	// GetTrip obtiene un viaje por su ID
 	GetTrip(ctx context.Context, tripID string) (*domain.Trip, error)
@@ -30,12 +32,21 @@ type TripService interface {
 
 	// CancelTrip cancela un viaje (solo el dueño)
 	CancelTrip(ctx context.Context, tripID string, userID int64, request domain.CancelTripRequest) error
+
+	// ProcessReservationCreated maneja eventos reservation.created
+	// Retorna error solo para fallos de sistema (triggers NACK)
+	// Retorna nil para fallos de negocio (manejados con evento de compensación)
+	ProcessReservationCreated(ctx context.Context, event messaging.ReservationCreatedEvent) error
+
+	// ProcessReservationCancelled maneja eventos reservation.cancelled
+	ProcessReservationCancelled(ctx context.Context, event messaging.ReservationCancelledEvent) error
 }
 
 type tripService struct {
 	tripRepo           repository.TripRepository
 	idempotencyService IdempotencyService
 	usersClient        clients.UsersClient
+	publisher          messaging.Publisher
 }
 
 // NewTripService crea una nueva instancia del servicio de viajes
@@ -43,11 +54,13 @@ func NewTripService(
 	tripRepo repository.TripRepository,
 	idempotencyService IdempotencyService,
 	usersClient clients.UsersClient,
+	publisher messaging.Publisher,
 ) TripService {
 	return &tripService{
 		tripRepo:           tripRepo,
 		idempotencyService: idempotencyService,
 		usersClient:        usersClient,
+		publisher:          publisher,
 	}
 }
 
@@ -73,7 +86,7 @@ func NewTripService(
 //	    }
 //	    return c.JSON(500, gin.H{"error": err.Error()})
 //	}
-func (s *tripService) CreateTrip(ctx context.Context, driverID int64, request domain.CreateTripRequest) (*domain.Trip, error) {
+func (s *tripService) CreateTrip(ctx context.Context, driverID int64, authToken string, request domain.CreateTripRequest) (*domain.Trip, error) {
 	// Validación 1: Parsear fecha de salida
 	departureTime, err := time.Parse(time.RFC3339, request.DepartureDatetime)
 	if err != nil {
@@ -101,8 +114,8 @@ func (s *tripService) CreateTrip(ctx context.Context, driverID int64, request do
 		return nil, fmt.Errorf("total_seats must be between 1 and 8")
 	}
 
-	// Validación 6: Verificar que el driver existe en users-api
-	_, err = s.usersClient.GetUser(ctx, driverID)
+	// Validación 6: Verificar que el driver existe en users-api (forward auth token)
+	_, err = s.usersClient.GetUser(ctx, driverID, authToken)
 	if err != nil {
 		// Si es ErrDriverNotFound, mantener ese error específico
 		return nil, fmt.Errorf("failed to validate driver: %w", err)
@@ -135,6 +148,10 @@ func (s *tripService) CreateTrip(ctx context.Context, driverID int64, request do
 	}
 
 	log.Info().Str("trip_id", trip.ID.Hex()).Int64("driver_id", driverID).Msg("Trip created")
+
+	// Publicar evento trip.created (fire-and-forget)
+	s.publisher.PublishTripCreated(ctx, trip)
+
 	return trip, nil
 }
 
@@ -264,6 +281,10 @@ func (s *tripService) UpdateTrip(ctx context.Context, tripID string, userID int6
 	}
 
 	log.Info().Str("trip_id", tripID).Int64("user_id", userID).Msg("Trip updated")
+
+	// Publicar evento trip.updated (fire-and-forget)
+	s.publisher.PublishTripUpdated(ctx, trip)
+
 	return trip, nil
 }
 
@@ -320,8 +341,151 @@ func (s *tripService) CancelTrip(ctx context.Context, tripID string, userID int6
 
 	log.Info().Str("trip_id", tripID).Int64("user_id", userID).Str("reason", request.Reason).Msg("Trip cancelled")
 
-	// TODO (Fase 5): Publicar evento trip.cancelled a RabbitMQ
-	// rabbitmq.PublishEvent("trip.cancelled", tripID, ...)
+	// Obtener el trip actualizado para publicar el evento con el estado correcto
+	cancelledTrip, err := s.tripRepo.FindByID(ctx, tripID)
+	if err != nil {
+		log.Error().Err(err).Str("trip_id", tripID).Msg("Failed to fetch cancelled trip for event publishing")
+		// No retornamos el error porque el trip ya fue cancelado exitosamente
+	} else {
+		// Publicar evento trip.cancelled (fire-and-forget)
+		s.publisher.PublishTripCancelled(ctx, cancelledTrip, userID, request.Reason)
+	}
 
 	return nil
+}
+
+// ProcessReservationCreated maneja eventos de reservation.created
+// Implementa optimistic locking y publica eventos de compensación en caso de fallo
+func (s *tripService) ProcessReservationCreated(ctx context.Context, event messaging.ReservationCreatedEvent) error {
+	// 1. Fetch trip to get current availability_version (IMMEDIATELY before update)
+	trip, err := s.tripRepo.FindByID(ctx, event.TripID)
+	if err != nil {
+		if err == domain.ErrTripNotFound {
+			// Trip doesn't exist - log warning and ACK (shouldn't happen if bookings-api is correct)
+			log.Warn().
+				Str("trip_id", event.TripID).
+				Str("reservation_id", event.ReservationID).
+				Msg("Trip not found for reservation")
+			return nil // ACK - trip not found
+		}
+		return fmt.Errorf("failed to fetch trip: %w", err) // System error - NACK
+	}
+
+	// 2. Attempt to reserve seats with optimistic locking
+	// seatsDelta is NEGATIVE to decrease available_seats
+	err = s.tripRepo.UpdateAvailability(ctx, event.TripID, -event.SeatsReserved, trip.AvailabilityVersion)
+
+	if err == domain.ErrOptimisticLockFailed {
+		// No seats available OR version conflict - publish compensation event
+		log.Warn().
+			Str("trip_id", event.TripID).
+			Str("reservation_id", event.ReservationID).
+			Int("seats_requested", event.SeatsReserved).
+			Int("available_seats", trip.AvailableSeats).
+			Int("expected_version", trip.AvailabilityVersion).
+			Msg("Failed to reserve seats - publishing reservation.failed")
+
+		// Publish compensating event
+		s.publisher.PublishReservationFailure(
+			ctx,
+			event.ReservationID,
+			event.TripID,
+			"No seats available or version conflict",
+			trip.AvailableSeats,
+		)
+		return nil // ACK - failure handled
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to update availability: %w", err) // System error - NACK
+	}
+
+	// 3. Success - fetch updated trip and publish events
+	updatedTrip, err := s.tripRepo.FindByID(ctx, event.TripID)
+	if err != nil {
+		log.Error().Err(err).Str("trip_id", event.TripID).Msg("Failed to fetch updated trip")
+		// Don't fail - seats already updated
+	} else {
+		// Calculate total price for the reservation
+		totalPrice := updatedTrip.PricePerSeat * float64(event.SeatsReserved)
+
+		// Publish reservation.confirmed event back to bookings-api
+		s.publisher.PublishReservationConfirmation(
+			ctx,
+			event.ReservationID,
+			event.TripID,
+			event.PassengerID,
+			event.SeatsReserved,
+			totalPrice,
+			updatedTrip.AvailableSeats,
+		)
+
+		// Publish trip.updated event for other consumers
+		s.publisher.PublishTripUpdated(ctx, updatedTrip)
+	}
+
+	log.Info().
+		Str("trip_id", event.TripID).
+		Str("reservation_id", event.ReservationID).
+		Int64("passenger_id", event.PassengerID).
+		Int("seats_reserved", event.SeatsReserved).
+		Int("available_seats", updatedTrip.AvailableSeats).
+		Int("reserved_seats", updatedTrip.ReservedSeats).
+		Msg("✅ Reservation confirmed successfully - confirmation event published")
+
+	return nil // ACK
+}
+
+// ProcessReservationCancelled maneja eventos de reservation.cancelled
+// Libera asientos previamente reservados
+func (s *tripService) ProcessReservationCancelled(ctx context.Context, event messaging.ReservationCancelledEvent) error {
+	// 1. Fetch trip to get current availability_version
+	trip, err := s.tripRepo.FindByID(ctx, event.TripID)
+	if err != nil {
+		if err == domain.ErrTripNotFound {
+			log.Warn().
+				Str("trip_id", event.TripID).
+				Str("reservation_id", event.ReservationID).
+				Msg("Trip not found for cancellation")
+			return nil // ACK - trip not found
+		}
+		return fmt.Errorf("failed to fetch trip: %w", err) // System error - NACK
+	}
+
+	// 2. Release seats with optimistic locking
+	// seatsDelta is POSITIVE to increase available_seats
+	err = s.tripRepo.UpdateAvailability(ctx, event.TripID, event.SeatsReleased, trip.AvailabilityVersion)
+
+	if err == domain.ErrOptimisticLockFailed {
+		// Version conflict - log and ACK (eventual consistency will handle this)
+		log.Warn().
+			Str("trip_id", event.TripID).
+			Str("reservation_id", event.ReservationID).
+			Int("seats_released", event.SeatsReleased).
+			Int("expected_version", trip.AvailabilityVersion).
+			Msg("Optimistic lock failed on cancellation - eventual consistency")
+		return nil // ACK - eventual consistency handles this
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to release seats: %w", err) // System error - NACK
+	}
+
+	// 3. Success - fetch updated trip and publish trip.updated event
+	updatedTrip, err := s.tripRepo.FindByID(ctx, event.TripID)
+	if err != nil {
+		log.Error().Err(err).Str("trip_id", event.TripID).Msg("Failed to fetch updated trip")
+	} else {
+		s.publisher.PublishTripUpdated(ctx, updatedTrip)
+	}
+
+	log.Info().
+		Str("trip_id", event.TripID).
+		Str("reservation_id", event.ReservationID).
+		Int("seats_released", event.SeatsReleased).
+		Int("available_seats", updatedTrip.AvailableSeats).
+		Int("reserved_seats", updatedTrip.ReservedSeats).
+		Msg("Reservation cancelled successfully")
+
+	return nil // ACK
 }
