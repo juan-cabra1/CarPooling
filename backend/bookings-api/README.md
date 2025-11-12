@@ -236,16 +236,269 @@ go test ./internal/services/...
 
 ## 🐳 Docker
 
-### Construir imagen
+### Descripción del Dockerfile
+
+El proyecto utiliza un **Dockerfile multi-stage** optimizado para producción:
+
+- **Stage 1 (Builder)**: Compila el binario Go estático
+  - Imagen base: `golang:1.22-alpine`
+  - Optimizaciones: CGO deshabilitado, binario estático
+  - Layer caching para builds más rápidos
+
+- **Stage 2 (Runtime)**: Imagen minimalista para ejecución
+  - Imagen base: `alpine:latest`
+  - Usuario no-root para seguridad
+  - Health check integrado
+  - Tamaño final reducido (~20MB)
+
+### Prerrequisitos para Docker
+
+- Docker 20.10 o superior
+- Docker Compose 2.0 o superior
+
+### Variables de entorno necesarias
+
+Antes de ejecutar con Docker, asegúrate de tener un archivo `.env` en la raíz del proyecto con estas variables:
 
 ```bash
+# MySQL
+MYSQL_ROOT_PASSWORD=your_secure_password
+
+# RabbitMQ
+RABBITMQ_USER=guest
+RABBITMQ_PASS=guest
+
+# JWT
+JWT_SECRET=your-secret-key-change-in-production
+
+# Environment
+ENVIRONMENT=development
+GIN_MODE=release
+LOG_LEVEL=info
+```
+
+### Comandos Docker
+
+#### 1. Construir imagen localmente
+
+```bash
+cd backend/bookings-api
 docker build -t bookings-api:latest .
 ```
 
-### Ejecutar con Docker Compose
+#### 2. Ejecutar imagen standalone (no recomendado)
 
 ```bash
+docker run -d \
+  --name bookings-api \
+  -p 8003:8003 \
+  -e SERVER_PORT=8003 \
+  -e DATABASE_URL="root:password@tcp(mysql:3306)/bookings_db?charset=utf8mb4&parseTime=True&loc=Local" \
+  -e JWT_SECRET="your-secret" \
+  -e RABBITMQ_URL="amqp://guest:guest@rabbitmq:5672/" \
+  -e TRIPS_API_URL="http://trips-api:8002" \
+  bookings-api:latest
+```
+
+#### 3. Ejecutar con Docker Compose (recomendado)
+
+```bash
+# Desde la raíz del proyecto
+cd /path/to/CarPooling
+
+# Iniciar todos los servicios
 docker-compose up -d
+
+# Iniciar solo bookings-api y sus dependencias
+docker-compose up -d bookings-api
+
+# Ver logs en tiempo real
+docker-compose logs -f bookings-api
+
+# Reconstruir imagen tras cambios
+docker-compose up --build bookings-api
+
+# Detener todos los servicios
+docker-compose down
+
+# Detener y eliminar volúmenes (WARNING: borra datos)
+docker-compose down -v
+```
+
+### Docker Compose - Servicios incluidos
+
+Cuando ejecutas `docker-compose up`, se inician los siguientes servicios:
+
+| Servicio | Puerto | Descripción |
+|----------|--------|-------------|
+| **mysql** | 3306 | Base de datos MySQL 8.0 |
+| **rabbitmq** | 5672, 15672 | Message broker + Management UI |
+| **trips-api** | 8002 | API de viajes (dependencia) |
+| **mongodb** | 27017 | Base de datos para trips-api |
+| **memcached** | 11211 | Cache para search-api |
+| **bookings-api** | 8003 | Este servicio |
+
+### Health Checks
+
+El servicio incluye health checks automáticos:
+
+```bash
+# Verificar estado del servicio
+curl http://localhost:8003/health
+
+# Ver estado de health checks en Docker
+docker inspect bookings-api-container | grep -A 10 "Health"
+
+# Ver health status en compose
+docker-compose ps
+```
+
+**Configuración del health check:**
+- Intervalo: 30s
+- Timeout: 10s
+- Retries: 3
+- Start period: 40s (tiempo para inicialización)
+
+### Acceso a servicios
+
+```bash
+# Acceder al contenedor de bookings-api
+docker exec -it bookings-api-container sh
+
+# Ver logs de bookings-api
+docker-compose logs -f bookings-api
+
+# Acceder a MySQL
+docker exec -it mysql-container mysql -uroot -p
+
+# Verificar base de datos
+docker exec -it mysql-container mysql -uroot -p -e "SHOW DATABASES;"
+docker exec -it mysql-container mysql -uroot -p bookings_db -e "SHOW TABLES;"
+
+# Acceder a RabbitMQ Management
+# http://localhost:15672 (usuario: guest, password: guest)
+
+# Ver exchanges y queues
+docker exec -it rabbitmq-container rabbitmqadmin list exchanges
+docker exec -it rabbitmq-container rabbitmqadmin list queues
+```
+
+### Troubleshooting
+
+#### 1. El contenedor no inicia
+
+```bash
+# Ver logs detallados
+docker-compose logs bookings-api
+
+# Verificar que MySQL esté listo
+docker-compose logs mysql | grep "ready for connections"
+
+# Verificar que RabbitMQ esté listo
+docker-compose logs rabbitmq | grep "Server startup complete"
+```
+
+#### 2. Error de conexión a MySQL
+
+```bash
+# Verificar conectividad desde el contenedor
+docker exec -it bookings-api-container ping mysql
+
+# Verificar variables de entorno
+docker exec -it bookings-api-container env | grep DATABASE_URL
+```
+
+#### 3. Error de conexión a RabbitMQ
+
+```bash
+# Verificar que RabbitMQ esté escuchando
+docker exec -it rabbitmq-container rabbitmq-diagnostics ping
+
+# Verificar URL de conexión
+docker exec -it bookings-api-container env | grep RABBITMQ_URL
+```
+
+#### 4. Port already in use
+
+```bash
+# Verificar qué proceso usa el puerto 8003
+# Windows:
+netstat -ano | findstr :8003
+
+# Linux/Mac:
+lsof -i :8003
+
+# Cambiar puerto en docker-compose.yml o detener el proceso conflictivo
+```
+
+#### 5. Reconstruir todo desde cero
+
+```bash
+# Detener y eliminar contenedores, redes, volúmenes
+docker-compose down -v
+
+# Eliminar imágenes
+docker rmi bookings-api
+
+# Reconstruir
+docker-compose build --no-cache bookings-api
+
+# Iniciar
+docker-compose up -d
+```
+
+### Workflow de desarrollo con Docker
+
+```bash
+# 1. Iniciar servicios de infraestructura
+docker-compose up -d mysql rabbitmq mongodb memcached
+
+# 2. Desarrollar localmente (fuera de Docker)
+cd backend/bookings-api
+go run cmd/api/main.go
+
+# 3. Cuando esté listo, probar con Docker
+docker-compose up --build bookings-api
+
+# 4. Verificar que todo funciona
+curl http://localhost:8003/health
+```
+
+### Testing en Docker
+
+```bash
+# Ejecutar tests dentro del contenedor
+docker-compose exec bookings-api go test ./...
+
+# Ejecutar tests con coverage
+docker-compose exec bookings-api go test -cover ./...
+
+# Ejecutar tests de integración
+docker-compose exec bookings-api go test -tags=integration ./...
+```
+
+### Optimizaciones de producción
+
+Para producción, considera:
+
+1. **Resource limits**: Descomentar sección `deploy.resources` en `docker-compose.yml`
+2. **Multi-stage build**: Ya implementado, reduce tamaño de imagen
+3. **Non-root user**: Ya implementado, mejora seguridad
+4. **Health checks**: Ya implementados, mejora confiabilidad
+5. **Restart policy**: `unless-stopped` configurado
+
+### Monitoreo de recursos
+
+```bash
+# Ver uso de recursos en tiempo real
+docker stats bookings-api-container
+
+# Ver consumo de disco
+docker system df
+
+# Ver volúmenes
+docker volume ls
+docker volume inspect carpooling_mysql_data
 ```
 
 ---

@@ -1,0 +1,50 @@
+# Environment files (secrets should not be in image)
+.env
+.env.*
+*.env
+
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test files and coverage
+*_test.go
+*.test
+coverage.out
+*.coverprofile
+
+# Documentation
+README.md
+*.md
+docs/
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Logs
+*.log
+logs/
