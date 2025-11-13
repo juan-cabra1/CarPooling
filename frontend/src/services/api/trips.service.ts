@@ -1,74 +1,64 @@
 import { apiClient } from './axios';
-import type { Trip, ApiResponse, PaginatedResponse, Location } from '@/types';
+import type { Trip, CreateTripData, UpdateTripData, TripFilters } from '@/types';
 
-export interface CreateTripData {
-  origin: Location;
-  destination: Location;
-  departure_time: string;
-  available_seats: number;
-  price_per_seat: number;
+interface TripsListResponse {
+  success: boolean;
+  data: {
+    trips: Trip[];
+    total: number;
+    page: number;
+    limit: number;
+  };
 }
 
-export interface UpdateTripData {
-  departure_time?: string;
-  available_seats?: number;
-  price_per_seat?: number;
-  status?: 'active' | 'completed' | 'cancelled';
+interface TripResponse {
+  success: boolean;
+  data: Trip;
 }
 
-export interface TripFilters {
-  driver_id?: string;
-  status?: string;
-  page?: number;
-  per_page?: number;
+interface DeleteResponse {
+  success: boolean;
+  message: string;
 }
 
 export const tripsService = {
-  // Create a new trip
-  createTrip: async (data: CreateTripData): Promise<ApiResponse<Trip>> => {
-    const response = await apiClient.post('/trips', data);
-    return response.data;
+  // Create a new trip (requires authentication)
+  createTrip: async (data: CreateTripData): Promise<Trip> => {
+    const response = await apiClient.post<TripResponse>('/api/trips', data);
+    return response.data.data;
   },
 
-  // Get trip by ID
-  getTripById: async (tripId: string): Promise<ApiResponse<Trip>> => {
-    const response = await apiClient.get(`/trips/${tripId}`);
-    return response.data;
+  // Get trip by ID (public)
+  getTripById: async (tripId: string): Promise<Trip> => {
+    const response = await apiClient.get<TripResponse>(`/api/trips/${tripId}`);
+    return response.data.data;
   },
 
-  // Get all trips with optional filters
-  getTrips: async (filters?: TripFilters): Promise<PaginatedResponse<Trip>> => {
-    const response = await apiClient.get('/trips', { params: filters });
-    return response.data;
+  // Get all trips with optional filters (public)
+  getTrips: async (filters?: TripFilters): Promise<TripsListResponse['data']> => {
+    const response = await apiClient.get<TripsListResponse>('/api/trips', { params: filters });
+    return response.data.data;
   },
 
-  // Get trips by driver
-  getTripsByDriver: async (driverId: string): Promise<ApiResponse<Trip[]>> => {
-    const response = await apiClient.get(`/trips/driver/${driverId}`);
-    return response.data;
+  // Update trip (requires authentication)
+  updateTrip: async (tripId: string, data: UpdateTripData): Promise<Trip> => {
+    const response = await apiClient.put<TripResponse>(`/api/trips/${tripId}`, data);
+    return response.data.data;
   },
 
-  // Update trip
-  updateTrip: async (tripId: string, data: UpdateTripData): Promise<ApiResponse<Trip>> => {
-    const response = await apiClient.patch(`/trips/${tripId}`, data);
-    return response.data;
+  // Partial update trip (requires authentication)
+  partialUpdateTrip: async (tripId: string, data: Partial<UpdateTripData>): Promise<Trip> => {
+    const response = await apiClient.patch<TripResponse>(`/api/trips/${tripId}`, data);
+    return response.data.data;
   },
 
-  // Cancel trip
-  cancelTrip: async (tripId: string): Promise<ApiResponse<Trip>> => {
-    const response = await apiClient.patch(`/trips/${tripId}/cancel`);
-    return response.data;
+  // Cancel trip (requires authentication)
+  cancelTrip: async (tripId: string, reason: string): Promise<void> => {
+    await apiClient.patch(`/api/trips/${tripId}/cancel`, { reason });
   },
 
-  // Delete trip
-  deleteTrip: async (tripId: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.delete(`/trips/${tripId}`);
-    return response.data;
-  },
-
-  // Get available seats for a trip
-  getAvailableSeats: async (tripId: string): Promise<ApiResponse<{ available_seats: number }>> => {
-    const response = await apiClient.get(`/trips/${tripId}/available-seats`);
-    return response.data;
+  // Delete trip (requires authentication)
+  deleteTrip: async (tripId: string): Promise<void> => {
+    await apiClient.delete<DeleteResponse>(`/api/trips/${tripId}`);
   },
 };

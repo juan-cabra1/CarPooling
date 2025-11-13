@@ -25,29 +25,89 @@ export interface AuthUser extends User {
 }
 
 // Trip Types
+export interface Coordinates {
+  lat: number;
+  lng: number;
+}
+
+export interface Location {
+  city: string;
+  province: string;
+  address: string;
+  coordinates: Coordinates;
+}
+
+export interface Car {
+  brand: string;
+  model: string;
+  year: number;
+  color: string;
+  plate: string;
+}
+
+export interface Preferences {
+  pets_allowed: boolean;
+  smoking_allowed: boolean;
+  music_allowed: boolean;
+}
+
 export interface Trip {
   id: string;
-  driver_id: string;
+  driver_id: number;
   origin: Location;
   destination: Location;
-  departure_time: string;
-  available_seats: number;
+  departure_datetime: string;
+  estimated_arrival_datetime: string;
   price_per_seat: number;
+  total_seats: number;
+  reserved_seats: number;
+  available_seats: number;
+  availability_version: number;
+  car: Car;
+  preferences: Preferences;
   status: TripStatus;
+  description: string;
+  cancelled_at?: string | null;
+  cancelled_by?: number | null;
+  cancellation_reason?: string;
   created_at: string;
   updated_at: string;
 }
 
-export interface Location {
-  address: string;
-  latitude: number;
-  longitude: number;
-  city?: string;
-  state?: string;
-  country?: string;
+export type TripStatus = 'draft' | 'published' | 'full' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface CreateTripData {
+  origin: Location;
+  destination: Location;
+  departure_datetime: string;
+  estimated_arrival_datetime: string;
+  price_per_seat: number;
+  total_seats: number;
+  car: Car;
+  preferences?: Preferences;
+  description?: string;
 }
 
-export type TripStatus = 'active' | 'completed' | 'cancelled';
+export interface UpdateTripData {
+  origin?: Location;
+  destination?: Location;
+  departure_datetime?: string;
+  estimated_arrival_datetime?: string;
+  price_per_seat?: number;
+  total_seats?: number;
+  car?: Car;
+  preferences?: Preferences;
+  description?: string;
+}
+
+export interface TripFilters {
+  driver_id?: number;
+  status?: string;
+  origin_city?: string;
+  destination_city?: string;
+  page?: number;
+  limit?: number;
+}
 
 // Booking Types
 export interface Booking {
