@@ -85,7 +85,7 @@ func main() {
 		// Use the first server from the config for cache initialization
 		cacheAddr := cfg.Memcached.Servers[0]
 		var err error
-		cacheService, err = cache.NewRedisCache(cacheAddr, "", 0)
+		cacheService, err = cache.NewMemcachedCache(cacheAddr)
 		if err != nil {
 			log.Warn().Err(err).Msg("Failed to initialize cache service")
 			cacheService = nil
@@ -97,7 +97,7 @@ func main() {
 	// Initialize repositories
 	tripRepo := repository.NewTripRepository(db)
 	eventRepo := repository.NewEventRepository(db)
-	_ = repository.NewPopularRouteRepository(db)
+	popularRouteRepo := repository.NewPopularRouteRepository(db)
 	log.Info().Msg("Repositories initialized successfully")
 
 	// Initialize HTTP clients
@@ -128,6 +128,17 @@ func main() {
 	)
 	log.Info().Msg("Trip event service initialized successfully")
 
+	// Initialize search service
+	searchService := service.NewSearchService(
+		tripRepo,
+		popularRouteRepo,
+		cacheService,
+		solrClient,
+		tripsClient,
+		usersClient,
+	)
+	log.Info().Msg("Search service initialized successfully")
+
 	// Initialize RabbitMQ consumer
 	consumer, err := messaging.NewConsumer(cfg.RabbitMQ.URL, cfg.RabbitMQ.QueueName, tripEventService)
 	if err != nil {
@@ -148,11 +159,12 @@ func main() {
 		memcachedClient,
 		cfg,
 	)
+	searchController := controller.NewSearchController(searchService)
 	log.Info().Msg("Controllers initialized successfully")
 
 	// Setup Gin router
 	router := gin.Default()
-	routes.SetupRoutes(router, healthController)
+	routes.SetupRoutes(router, healthController, searchController)
 	log.Info().Msg("Routes configured successfully")
 
 	// Configure HTTP server with timeouts

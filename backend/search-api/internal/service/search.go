@@ -1,4 +1,4 @@
-package services
+package service
 
 import (
 	"context"
@@ -337,7 +337,7 @@ func (s *searchService) DenormalizeTrip(ctx context.Context, tripID string) erro
 	// Step 3: Build SearchTrip with denormalized data
 	searchTrip := &domain.SearchTrip{
 		ID:                       primitive.NewObjectID(),
-		TripID:                   trip.ID,
+		TripID:                   trip.ID.Hex(),
 		DriverID:                 trip.DriverID,
 		Driver:                   s.mapUserToDriver(driver),
 		Origin:                   trip.Origin,
@@ -680,8 +680,8 @@ func (s *searchService) mapUserToDriver(user *domain.User) domain.Driver {
 		Name:       user.Name,
 		Email:      user.Email,
 		PhotoURL:   user.PhotoURL,
-		Rating:     user.Rating,
-		TotalTrips: user.TotalTrips,
+		Rating:     user.AverageRatingAsDriver,
+		TotalTrips: user.TotalTripsAsDriver,
 	}
 }
 
