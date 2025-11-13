@@ -8,20 +8,21 @@ import (
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
-	solr "github.com/rtt/Go-Solr"
+	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 
 	"search-api/internal/config"
+	solrClient "search-api/internal/solr"
 )
 
 // HealthController handles health check endpoints
 type HealthController struct {
-	mongoClient      *mongo.Client
-	solrClient       *solr.Connection
-	memcachedClient  *memcache.Client
-	logger           zerolog.Logger
-	config           *config.Config
+	mongoClient     *mongo.Client
+	solrClient      *solrClient.Client
+	memcachedClient *memcache.Client
+	logger          zerolog.Logger
+	config          *config.Config
 }
 
 // ServiceHealthStatus represents the health status of a single service
@@ -41,16 +42,15 @@ type HealthCheckResponse struct {
 // NewHealthController creates a new health controller instance
 func NewHealthController(
 	mongoClient *mongo.Client,
-	solrClient *solr.Connection,
+	solrClient *solrClient.Client,
 	memcachedClient *memcache.Client,
-	logger zerolog.Logger,
 	cfg *config.Config,
 ) *HealthController {
 	return &HealthController{
 		mongoClient:     mongoClient,
 		solrClient:      solrClient,
 		memcachedClient: memcachedClient,
-		logger:          logger,
+		logger:          log.Logger,
 		config:          cfg,
 	}
 }
@@ -145,19 +145,10 @@ func (hc *HealthController) checkSolrHealth(ctx context.Context) ServiceHealthSt
 		}
 	}
 
-	// Try a simple ping query to Solr
-	// Since Go-Solr doesn't have a dedicated ping method, we perform a simple query
-	query := solr.Query{
-		Params: solr.URLParamMap{
-			"q":    []string{"*:*"},
-			"rows": []string{"0"},
-		},
-	}
-
-	// Execute query with timeout handling
+	// Execute ping with timeout handling
 	done := make(chan error, 1)
 	go func() {
-		_, err := hc.solrClient.Select(&query)
+		err := hc.solrClient.Ping()
 		done <- err
 	}()
 
@@ -166,7 +157,7 @@ func (hc *HealthController) checkSolrHealth(ctx context.Context) ServiceHealthSt
 		if err != nil {
 			hc.logger.Error().
 				Err(err).
-				Msg("Solr query failed")
+				Msg("Solr ping failed")
 
 			return ServiceHealthStatus{
 				Status:  "unhealthy",

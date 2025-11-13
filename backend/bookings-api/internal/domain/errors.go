@@ -41,6 +41,10 @@ var (
 		Code:    "CANNOT_CANCEL_COMPLETED",
 		Message: "Cannot cancel a completed booking",
 	}
+	ErrBookingAlreadyCancelled = &AppError{
+		Code:    "BOOKING_ALREADY_CANCELLED",
+		Message: "Booking has already been cancelled",
+	}
 
 	// Trip validation errors
 	ErrTripNotFound = &AppError{
