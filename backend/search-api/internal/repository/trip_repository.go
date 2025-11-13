@@ -17,9 +17,12 @@ import (
 type TripRepository interface {
 	Create(ctx context.Context, trip *domain.SearchTrip) error
 	FindByID(ctx context.Context, id string) (*domain.SearchTrip, error)
+	FindByTripID(ctx context.Context, tripID string) (*domain.SearchTrip, error)
 	Update(ctx context.Context, trip *domain.SearchTrip) error
 	UpdateStatus(ctx context.Context, id string, status string) error
+	UpdateStatusByTripID(ctx context.Context, tripID string, status string) error
 	UpdateAvailability(ctx context.Context, id string, availableSeats int) error
+	UpdateAvailabilityByTripID(ctx context.Context, tripID string, availableSeats int, reservedSeats int, status string) error
 	Search(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*domain.SearchTrip, int64, error)
 	SearchByLocation(ctx context.Context, lat, lng float64, radiusKm int, additionalFilters map[string]interface{}) ([]*domain.SearchTrip, error)
 	SearchByRoute(ctx context.Context, originCity, destinationCity string, filters map[string]interface{}) ([]*domain.SearchTrip, error)
@@ -296,4 +299,73 @@ func (r *tripRepository) SearchByRoute(ctx context.Context, originCity, destinat
 	}
 
 	return trips, nil
+}
+
+// FindByTripID retrieves a trip by its trip_id field (not MongoDB _id)
+func (r *tripRepository) FindByTripID(ctx context.Context, tripID string) (*domain.SearchTrip, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var trip domain.SearchTrip
+	err := r.collection.FindOne(ctx, bson.M{"trip_id": tripID}).Decode(&trip)
+	if err == mongo.ErrNoDocuments {
+		return nil, domain.ErrSearchTripNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find trip by trip_id: %w", err)
+	}
+
+	return &trip, nil
+}
+
+// UpdateStatusByTripID updates only the status of a trip using trip_id field
+func (r *tripRepository) UpdateStatusByTripID(ctx context.Context, tripID string, status string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"trip_id": tripID}
+	update := bson.M{
+		"$set": bson.M{
+			"status":     status,
+			"updated_at": time.Now(),
+		},
+	}
+
+	result, err := r.collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to update trip status: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrSearchTripNotFound
+	}
+
+	return nil
+}
+
+// UpdateAvailabilityByTripID updates availability, reserved seats, and status using trip_id field
+func (r *tripRepository) UpdateAvailabilityByTripID(ctx context.Context, tripID string, availableSeats int, reservedSeats int, status string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"trip_id": tripID}
+	update := bson.M{
+		"$set": bson.M{
+			"available_seats": availableSeats,
+			"reserved_seats":  reservedSeats,
+			"status":          status,
+			"updated_at":      time.Now(),
+		},
+	}
+
+	result, err := r.collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to update trip availability: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrSearchTripNotFound
+	}
+
+	return nil
 }
