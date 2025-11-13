@@ -55,6 +55,17 @@ var (
 		Message: "Unauthorized access to external service",
 	}
 
+	// Infrastructure Errors
+	ErrSolrUnavailable = &AppError{
+		Code:    "SOLR_UNAVAILABLE",
+		Message: "Solr search engine temporarily unavailable",
+	}
+
+	ErrCacheUnavailable = &AppError{
+		Code:    "CACHE_UNAVAILABLE",
+		Message: "Cache service temporarily unavailable",
+	}
+
 	// Repository Errors
 	ErrSearchTripNotFound = &AppError{
 		Code:    "SEARCH_TRIP_NOT_FOUND",
@@ -64,6 +75,22 @@ var (
 	ErrEventAlreadyProcessed = &AppError{
 		Code:    "EVENT_ALREADY_PROCESSED",
 		Message: "Event has already been processed (duplicate)",
+	}
+
+	// Validation Errors
+	ErrInvalidQuery = &AppError{
+		Code:    "INVALID_QUERY",
+		Message: "Invalid search query parameters",
+	}
+
+	ErrInvalidGeoCoords = &AppError{
+		Code:    "INVALID_GEO_COORDS",
+		Message: "Invalid geographic coordinates",
+	}
+
+	ErrInvalidInput = &AppError{
+		Code:    "INVALID_INPUT",
+		Message: "Invalid input provided",
 	}
 )
 

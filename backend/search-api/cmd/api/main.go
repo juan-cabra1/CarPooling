@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,56 +18,58 @@ import (
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func main() {
 	// Configure zerolog for structured logging
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
-	log.Println("🚀 Starting search-api...")
+	log.Info().Msg("Starting search-api")
 
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("❌ Failed to load config: %v", err)
+		log.Fatal().Err(err).Msg("Failed to load config")
 	}
-	log.Printf("✅ Configuration loaded successfully")
+	log.Info().Msg("Configuration loaded successfully")
 
 	// Connect to MongoDB
 	db, err := database.ConnectMongoDB(cfg.Mongo.URI, cfg.Mongo.DB)
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to MongoDB: %v", err)
+		log.Fatal().Err(err).Msg("Failed to connect to MongoDB")
 	}
 
 	// Create indexes - CRITICAL for performance and idempotency
 	if err := database.CreateIndexes(db); err != nil {
-		log.Fatalf("❌ Failed to create MongoDB indexes: %v", err)
+		log.Fatal().Err(err).Msg("Failed to create MongoDB indexes")
 	}
-	log.Println("✅ MongoDB indexes created successfully")
+	log.Info().Msg("MongoDB indexes created successfully")
 
 	// Connect to Apache Solr
 	solrClient, err := solr.NewClient(cfg.Solr.URL, cfg.Solr.Core)
 	if err != nil {
-		log.Printf("⚠️  Failed to connect to Solr: %v (will fallback to MongoDB)", err)
+		log.Warn().Err(err).Msg("Failed to connect to Solr (will fallback to MongoDB)")
 		solrClient = nil // Continue without Solr - graceful degradation
 	} else {
 		// Test Solr connection
 		if err := solrClient.Ping(); err != nil {
-			log.Printf("⚠️  Solr ping failed: %v (will fallback to MongoDB)", err)
+			log.Warn().Err(err).Msg("Solr ping failed (will fallback to MongoDB)")
 			solrClient = nil
 		} else {
-			log.Println("✅ Connected to Apache Solr successfully")
+			log.Info().Msg("Connected to Apache Solr successfully")
 		}
 	}
 
 	// Connect to Memcached
 	memcachedClient := memcache.New(cfg.Memcached.Servers...)
 	if err := memcachedClient.Ping(); err != nil {
-		log.Printf("⚠️  Failed to connect to Memcached: %v (caching disabled)", err)
+		log.Warn().Err(err).Msg("Failed to connect to Memcached (caching disabled)")
 		memcachedClient = nil
 	} else {
-		log.Println("✅ Connected to Memcached successfully")
+		log.Info().Msg("Connected to Memcached successfully")
 	}
 
 	// Get MongoDB client for health checks
@@ -78,7 +79,7 @@ func main() {
 	_ = repository.NewSearchRepository(db)
 	_ = repository.NewEventRepository(db)
 	_ = repository.NewPopularRouteRepository(db)
-	log.Println("✅ Repositories initialized successfully")
+	log.Info().Msg("Repositories initialized successfully")
 
 	// Initialize controllers
 	healthController := controller.NewHealthController(
@@ -87,12 +88,12 @@ func main() {
 		memcachedClient,
 		cfg,
 	)
-	log.Println("✅ Controllers initialized successfully")
+	log.Info().Msg("Controllers initialized successfully")
 
 	// Setup Gin router
 	router := gin.Default()
 	routes.SetupRoutes(router, healthController)
-	log.Println("✅ Routes configured successfully")
+	log.Info().Msg("Routes configured successfully")
 
 	// Configure HTTP server with timeouts
 	srv := &http.Server{
@@ -106,9 +107,9 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		log.Printf("✅ search-api server listening on port %s", cfg.ServerPort)
+		log.Info().Str("port", cfg.ServerPort).Msg("search-api server listening")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("❌ Failed to start server: %v", err)
+			log.Fatal().Err(err).Msg("Failed to start server")
 		}
 	}()
 
@@ -117,16 +118,16 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("🛑 Shutting down search-api server...")
+	log.Info().Msg("Shutting down search-api server")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("❌ Server forced to shutdown: %v", err)
+		log.Fatal().Err(err).Msg("Server forced to shutdown")
 	}
 
-	log.Println("✅ search-api server exited gracefully")
+	log.Info().Msg("search-api server exited gracefully")
 }
 
 // getMongoClient extracts the *mongo.Client from *mongo.Database
