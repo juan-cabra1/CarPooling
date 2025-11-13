@@ -67,6 +67,12 @@ type Booking struct {
 	// Indexed for efficient queries like "find all my bookings"
 	PassengerID int64 `gorm:"index;not null" json:"passenger_id"`
 
+	// DriverID references the trip's driver from users-api (user ID as int64)
+	// Populated when reservation is confirmed via reservation.confirmed event
+	// Used for authorization checks (driver can also cancel bookings on their trips)
+	// Default 0 for pending bookings (populated on confirmation)
+	DriverID int64 `gorm:"index;default:0" json:"driver_id"`
+
 	// SeatsRequested is the number of seats reserved for this booking
 	// Must be between 1 and available seats on the trip
 	SeatsRequested int `gorm:"not null" json:"seats_requested"`

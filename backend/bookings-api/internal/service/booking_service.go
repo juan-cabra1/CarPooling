@@ -222,26 +222,17 @@ func (s *bookingService) CancelBooking(ctx context.Context, bookingID string, us
 		return fmt.Errorf("failed to get booking: %w", err)
 	}
 
-	// Step 2: Get trip details to verify if user is driver
-	trip, err := s.tripsClient.GetTrip(ctx, booking.TripID)
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("trip_id", booking.TripID).
-			Msg("Failed to get trip for cancellation authorization check")
-		return err
-	}
-
-	// Step 3: Authorization check - must be passenger or driver
+	// Step 2: Authorization check - must be passenger or driver
+	// Using local data from booking (driver_id populated on confirmation)
 	isPassenger := booking.PassengerID == userID
-	isDriver := trip.DriverID == userID
+	isDriver := booking.DriverID == userID
 
 	if !isPassenger && !isDriver {
 		log.Warn().
 			Str("booking_id", bookingID).
 			Int64("user_id", userID).
 			Int64("passenger_id", booking.PassengerID).
-			Int64("driver_id", trip.DriverID).
+			Int64("driver_id", booking.DriverID).
 			Msg("Unauthorized cancellation attempt")
 		return domain.ErrUnauthorized.WithDetails(map[string]interface{}{
 			"booking_id": bookingID,
@@ -249,7 +240,7 @@ func (s *bookingService) CancelBooking(ctx context.Context, bookingID string, us
 		})
 	}
 
-	// Step 4: Validate booking can be cancelled (cannot cancel completed bookings)
+	// Step 3: Validate booking can be cancelled (cannot cancel completed bookings)
 	if booking.IsCompleted() {
 		log.Warn().
 			Str("booking_id", bookingID).
@@ -261,13 +252,13 @@ func (s *bookingService) CancelBooking(ctx context.Context, bookingID string, us
 		})
 	}
 
-	// Step 5: Check if already cancelled
+	// Step 4: Check if already cancelled
 	if booking.IsCancelled() {
 		log.Info().Str("booking_id", bookingID).Msg("Booking already cancelled")
 		return nil // Idempotent: already cancelled is not an error
 	}
 
-	// Step 6: Cancel the booking
+	// Step 5: Cancel the booking
 	if err := s.bookingRepo.CancelBooking(bookingID, reason); err != nil {
 		log.Error().
 			Err(err).
@@ -283,7 +274,7 @@ func (s *bookingService) CancelBooking(ctx context.Context, bookingID string, us
 		Bool("is_driver", isDriver).
 		Msg("✅ Booking cancelled successfully")
 
-	// Step 7: Publish reservation.cancelled event to RabbitMQ
+	// Step 6: Publish reservation.cancelled event to RabbitMQ
 	// IMPORTANT: Eventual consistency pattern - if publish fails, DON'T rollback database
 	// The booking is already cancelled (source of truth), event is just a notification
 	if err := s.publisher.PublishReservationCancelled(

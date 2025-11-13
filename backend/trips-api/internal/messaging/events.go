@@ -74,6 +74,7 @@ type ReservationConfirmedEvent struct {
 	ReservationID  string    `json:"reservation_id"`  // UUID de la reserva confirmada
 	TripID         string    `json:"trip_id"`         // MongoDB ObjectID como string
 	PassengerID    int64     `json:"passenger_id"`    // ID del pasajero
+	DriverID       int64     `json:"driver_id"`       // ID del conductor del viaje
 	SeatsReserved  int       `json:"seats_reserved"`  // Número de asientos reservados
 	TotalPrice     float64   `json:"total_price"`     // Precio total de la reserva
 	AvailableSeats int       `json:"available_seats"` // Asientos disponibles después de reserva

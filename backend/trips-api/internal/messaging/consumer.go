@@ -11,9 +11,9 @@ import (
 
 const (
 	// Inbound exchange/queue configuration (from bookings-api)
-	consumerExchange = "reservations.events" // Topic exchange
-	consumerQueue    = "trips.reservations"  // Durable queue
-	bindingKey       = "reservation.*"       // Matches reservation.created, reservation.cancelled
+	consumerExchange = "bookings.events"    // Topic exchange (must match bookings-api publisher)
+	consumerQueue    = "trips.reservations" // Durable queue
+	bindingKey       = "reservation.*"      // Matches reservation.created, reservation.cancelled
 
 	// Consumer settings
 	prefetchCount = 10                   // Process 10 messages concurrently

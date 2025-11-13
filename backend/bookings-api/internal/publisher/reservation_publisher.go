@@ -66,7 +66,7 @@ const (
 // This interface allows for easy mocking in tests without requiring actual RabbitMQ connection
 type Publisher interface {
 	// PublishReservationCreated publishes a reservation.created event
-	PublishReservationCreated(tripID string, seatsReserved int, reservationID string) error
+	PublishReservationCreated(tripID string, passengerID int64, seatsReserved int, reservationID string) error
 
 	// PublishReservationCancelled publishes a reservation.cancelled event
 	PublishReservationCancelled(tripID string, seatsReleased int, reservationID string) error

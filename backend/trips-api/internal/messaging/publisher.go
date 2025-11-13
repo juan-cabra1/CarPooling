@@ -33,6 +33,7 @@ type Publisher interface {
 	PublishTripUpdated(ctx context.Context, trip *domain.Trip)
 	PublishTripCancelled(ctx context.Context, trip *domain.Trip, cancelledBy int64, reason string)
 	PublishReservationFailure(ctx context.Context, reservationID, tripID, reason string, availableSeats int)
+	PublishReservationConfirmation(ctx context.Context, reservationID, tripID string, passengerID, driverID int64, seatsReserved int, totalPrice float64, availableSeats int)
 	Close() error
 }
 
@@ -160,13 +161,14 @@ func (p *publisher) PublishReservationFailure(ctx context.Context, reservationID
 }
 
 // PublishReservationConfirmation publica un evento de confirmación cuando una reserva es exitosa
-func (p *publisher) PublishReservationConfirmation(ctx context.Context, reservationID, tripID string, passengerID int64, seatsReserved int, totalPrice float64, availableSeats int) {
+func (p *publisher) PublishReservationConfirmation(ctx context.Context, reservationID, tripID string, passengerID, driverID int64, seatsReserved int, totalPrice float64, availableSeats int) {
 	event := ReservationConfirmedEvent{
 		EventID:        uuid.New().String(),
 		EventType:      routingKeyReservationConfirmed,
 		ReservationID:  reservationID,
 		TripID:         tripID,
 		PassengerID:    passengerID,
+		DriverID:       driverID,
 		SeatsReserved:  seatsReserved,
 		TotalPrice:     totalPrice,
 		AvailableSeats: availableSeats,

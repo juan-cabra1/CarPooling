@@ -415,6 +415,7 @@ func (s *tripService) ProcessReservationCreated(ctx context.Context, event messa
 			event.ReservationID,
 			event.TripID,
 			event.PassengerID,
+			updatedTrip.DriverID,
 			event.SeatsReserved,
 			totalPrice,
 			updatedTrip.AvailableSeats,

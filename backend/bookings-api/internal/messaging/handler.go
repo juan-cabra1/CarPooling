@@ -246,9 +246,10 @@ func (c *TripsConsumer) HandleReservationConfirmed(body []byte) error {
 		return nil
 	}
 
-	// Update booking status to confirmed and set total price
+	// Update booking status to confirmed, set total price, and store driver_id
 	booking.Status = dao.BookingStatusConfirmed
 	booking.TotalPrice = event.TotalPrice
+	booking.DriverID = event.DriverID // Store driver for local authorization checks
 
 	err = c.bookingRepo.Update(booking)
 	if err != nil {
