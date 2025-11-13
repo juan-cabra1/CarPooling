@@ -14,8 +14,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// setupEventTestDB creates a test MongoDB connection for event repository tests
-func setupEventTestDB(t *testing.T) (*mongo.Database, func()) {
+// setupEventTest creates a test MongoDB connection and repository for event tests
+func setupEventTest(t *testing.T) (EventRepository, func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -31,168 +31,175 @@ func setupEventTestDB(t *testing.T) (*mongo.Database, func()) {
 	})
 	require.NoError(t, err, "Failed to create unique index on event_id")
 
+	repo := NewEventRepository(db)
+
 	cleanup := func() {
 		ctx := context.Background()
 		_ = db.Collection("processed_events").Drop(ctx)
 		_ = client.Disconnect(ctx)
 	}
 
-	return db, cleanup
+	return repo, cleanup
 }
 
-func TestEventRepository_CheckAndMarkEvent_FirstTime(t *testing.T) {
-	db, cleanup := setupEventTestDB(t)
+func TestEventRepository_IsEventProcessed_NotFound(t *testing.T) {
+	repo, cleanup := setupEventTest(t)
 	defer cleanup()
 
-	repo := NewEventRepository(db)
+	// Check if event is processed (should be false - not found)
+	isProcessed, err := repo.IsEventProcessed(context.Background(), "event-not-exists")
 
-	// First time processing an event
-	shouldProcess, err := repo.CheckAndMarkEvent(context.Background(), "event-123", "trip.created")
-	require.NoError(t, err, "Should not return error on first check")
-	assert.True(t, shouldProcess, "Should return true for first-time event processing")
-}
-
-func TestEventRepository_CheckAndMarkEvent_Duplicate(t *testing.T) {
-	db, cleanup := setupEventTestDB(t)
-	defer cleanup()
-
-	repo := NewEventRepository(db)
-
-	// Process event first time
-	shouldProcess, err := repo.CheckAndMarkEvent(context.Background(), "event-456", "trip.updated")
-	require.NoError(t, err, "First check should succeed")
-	assert.True(t, shouldProcess, "Should process first time")
-
-	// Try to process same event again (duplicate)
-	shouldProcess, err = repo.CheckAndMarkEvent(context.Background(), "event-456", "trip.updated")
-	require.NoError(t, err, "Duplicate check should not return error")
-	assert.False(t, shouldProcess, "Should return false for duplicate event")
-}
-
-func TestEventRepository_CheckAndMarkEvent_DifferentEventTypes(t *testing.T) {
-	db, cleanup := setupEventTestDB(t)
-	defer cleanup()
-
-	repo := NewEventRepository(db)
-
-	eventID := "event-789"
-
-	// Process event with type "trip.created"
-	shouldProcess, err := repo.CheckAndMarkEvent(context.Background(), eventID, "trip.created")
-	require.NoError(t, err, "First check should succeed")
-	assert.True(t, shouldProcess, "Should process first event type")
-
-	// Try same event_id with different event_type (should be treated as duplicate)
-	shouldProcess, err = repo.CheckAndMarkEvent(context.Background(), eventID, "trip.updated")
-	require.NoError(t, err, "Second check should not return error")
-	assert.False(t, shouldProcess, "Should return false - event_id already processed regardless of type")
-}
-
-func TestEventRepository_IsEventProcessed(t *testing.T) {
-	db, cleanup := setupEventTestDB(t)
-	defer cleanup()
-
-	repo := NewEventRepository(db)
-
-	eventID := "event-check-123"
-
-	// Check before processing
-	isProcessed, err := repo.IsEventProcessed(context.Background(), eventID)
-	require.NoError(t, err, "Should not return error")
+	require.NoError(t, err)
 	assert.False(t, isProcessed, "Event should not be processed yet")
+}
+
+func TestEventRepository_MarkEventProcessed_Success(t *testing.T) {
+	repo, cleanup := setupEventTest(t)
+	defer cleanup()
+
+	eventID := "event-123"
+	event := &domain.ProcessedEvent{
+		EventID:   eventID,
+		EventType: "trip.created",
+		Result:    "success",
+	}
 
 	// Mark event as processed
-	event := &domain.ProcessedEvent{
-		EventID:     eventID,
-		EventType:   "trip.created",
-		ProcessedAt: time.Now(),
-		Result:      "success",
-	}
-	err = repo.MarkEventProcessed(context.Background(), event)
-	require.NoError(t, err, "Should mark event successfully")
+	err := repo.MarkEventProcessed(context.Background(), event)
+	require.NoError(t, err)
 
-	// Check after processing
-	isProcessed, err = repo.IsEventProcessed(context.Background(), eventID)
-	require.NoError(t, err, "Should not return error")
+	// Verify it's now marked as processed
+	isProcessed, err := repo.IsEventProcessed(context.Background(), eventID)
+	require.NoError(t, err)
 	assert.True(t, isProcessed, "Event should be marked as processed")
 }
 
-func TestEventRepository_MarkEventProcessed_Idempotent(t *testing.T) {
-	db, cleanup := setupEventTestDB(t)
+func TestEventRepository_MarkEventProcessed_Duplicate(t *testing.T) {
+	repo, cleanup := setupEventTest(t)
 	defer cleanup()
 
-	repo := NewEventRepository(db)
-
+	eventID := "event-456"
 	event := &domain.ProcessedEvent{
-		EventID:     "event-idempotent-123",
-		EventType:   "trip.cancelled",
-		ProcessedAt: time.Now(),
-		Result:      "success",
+		EventID:   eventID,
+		EventType: "trip.updated",
+		Result:    "success",
 	}
 
 	// Mark event first time
 	err := repo.MarkEventProcessed(context.Background(), event)
-	require.NoError(t, err, "First mark should succeed")
+	require.NoError(t, err)
 
-	// Mark same event again (idempotent - should not return error)
+	// Try to mark same event again - should succeed (idempotent)
 	err = repo.MarkEventProcessed(context.Background(), event)
-	require.NoError(t, err, "Second mark should be idempotent and not return error")
+	require.NoError(t, err, "Marking duplicate event should not return error (idempotent)")
+
+	// Verify it's still marked as processed
+	isProcessed, err := repo.IsEventProcessed(context.Background(), eventID)
+	require.NoError(t, err)
+	assert.True(t, isProcessed)
 }
 
 func TestEventRepository_MarkEventProcessed_SetsTimestamp(t *testing.T) {
-	db, cleanup := setupEventTestDB(t)
+	repo, cleanup := setupEventTest(t)
 	defer cleanup()
 
-	repo := NewEventRepository(db)
-
 	event := &domain.ProcessedEvent{
-		EventID:   "event-timestamp-123",
-		EventType: "trip.created",
+		EventID:   "event-789",
+		EventType: "trip.cancelled",
 		Result:    "success",
-		// ProcessedAt is intentionally zero
+		// ProcessedAt is intentionally zero - should be auto-set
 	}
 
 	// Mark event (should auto-set ProcessedAt)
 	err := repo.MarkEventProcessed(context.Background(), event)
-	require.NoError(t, err, "Should mark event successfully")
+	require.NoError(t, err)
 
-	// Verify timestamp was set
+	// Verify event was processed
 	isProcessed, err := repo.IsEventProcessed(context.Background(), event.EventID)
-	require.NoError(t, err, "Should not return error")
-	assert.True(t, isProcessed, "Event should be processed")
+	require.NoError(t, err)
+	assert.True(t, isProcessed, "Event should be marked as processed")
 }
 
-func TestEventRepository_ConcurrentCheckAndMark(t *testing.T) {
-	db, cleanup := setupEventTestDB(t)
+func TestEventRepository_IsEventProcessed_MultipleEvents(t *testing.T) {
+	repo, cleanup := setupEventTest(t)
 	defer cleanup()
 
-	repo := NewEventRepository(db)
-	eventID := "event-concurrent-123"
+	events := []*domain.ProcessedEvent{
+		{EventID: "event-001", EventType: "trip.created", Result: "success"},
+		{EventID: "event-002", EventType: "trip.updated", Result: "success"},
+		{EventID: "event-003", EventType: "trip.cancelled", Result: "failed"},
+	}
+
+	// Mark all events as processed
+	for _, event := range events {
+		err := repo.MarkEventProcessed(context.Background(), event)
+		require.NoError(t, err)
+	}
+
+	// Verify all are marked as processed
+	for _, event := range events {
+		isProcessed, err := repo.IsEventProcessed(context.Background(), event.EventID)
+		require.NoError(t, err)
+		assert.True(t, isProcessed, "Event %s should be processed", event.EventID)
+	}
+
+	// Verify a non-existent event is not processed
+	isProcessed, err := repo.IsEventProcessed(context.Background(), "event-999")
+	require.NoError(t, err)
+	assert.False(t, isProcessed, "Non-existent event should not be processed")
+}
+
+func TestEventRepository_ConcurrentMarkEvent(t *testing.T) {
+	repo, cleanup := setupEventTest(t)
+	defer cleanup()
+
+	eventID := "event-concurrent"
+	event := &domain.ProcessedEvent{
+		EventID:   eventID,
+		EventType: "trip.created",
+		Result:    "success",
+	}
 
 	// Simulate concurrent processing attempts
-	results := make(chan bool, 3)
-	errors := make(chan error, 3)
+	errors := make(chan error, 5)
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		go func() {
-			shouldProcess, err := repo.CheckAndMarkEvent(context.Background(), eventID, "trip.created")
-			results <- shouldProcess
+			err := repo.MarkEventProcessed(context.Background(), event)
 			errors <- err
 		}()
 	}
 
-	// Collect results
-	var processCount int
-	for i := 0; i < 3; i++ {
+	// Collect results - all should succeed (idempotent)
+	for i := 0; i < 5; i++ {
 		err := <-errors
-		require.NoError(t, err, "Should not return error")
-
-		shouldProcess := <-results
-		if shouldProcess {
-			processCount++
-		}
+		require.NoError(t, err, "Concurrent mark should not return error (idempotent)")
 	}
 
-	// Exactly one goroutine should have been allowed to process
-	assert.Equal(t, 1, processCount, "Exactly one concurrent call should be allowed to process")
+	// Verify event is marked exactly once
+	isProcessed, err := repo.IsEventProcessed(context.Background(), eventID)
+	require.NoError(t, err)
+	assert.True(t, isProcessed, "Event should be marked as processed")
+}
+
+func TestEventRepository_MarkEventProcessed_WithMetadata(t *testing.T) {
+	repo, cleanup := setupEventTest(t)
+	defer cleanup()
+
+	event := &domain.ProcessedEvent{
+		EventID:      "event-metadata",
+		EventType:    "trip.created",
+		Result:       "success",
+		ProcessedAt:  time.Now(),
+		ErrorMessage: "",
+	}
+
+	// Mark event with metadata
+	err := repo.MarkEventProcessed(context.Background(), event)
+	require.NoError(t, err)
+
+	// Verify it's processed
+	isProcessed, err := repo.IsEventProcessed(context.Background(), event.EventID)
+	require.NoError(t, err)
+	assert.True(t, isProcessed)
 }

@@ -8,11 +8,15 @@ import (
 	"syscall"
 	"time"
 
+	"search-api/internal/cache"
 	"search-api/internal/config"
 	"search-api/internal/controller"
 	"search-api/internal/database"
+	httpClient "search-api/internal/http"
+	"search-api/internal/messaging"
 	"search-api/internal/repository"
 	"search-api/internal/routes"
+	"search-api/internal/service"
 	"search-api/internal/solr"
 
 	"github.com/bradfitz/gomemcache/memcache"
@@ -75,11 +79,67 @@ func main() {
 	// Get MongoDB client for health checks
 	mongoClient := getMongoClient(db)
 
+	// Initialize cache using first Memcached server
+	var cacheService cache.Cache
+	if memcachedClient != nil {
+		// Use the first server from the config for cache initialization
+		cacheAddr := cfg.Memcached.Servers[0]
+		var err error
+		cacheService, err = cache.NewRedisCache(cacheAddr, "", 0)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to initialize cache service")
+			cacheService = nil
+		} else {
+			log.Info().Msg("Cache service initialized successfully")
+		}
+	}
+
 	// Initialize repositories
-	_ = repository.NewSearchRepository(db)
-	_ = repository.NewEventRepository(db)
+	tripRepo := repository.NewTripRepository(db)
+	eventRepo := repository.NewEventRepository(db)
 	_ = repository.NewPopularRouteRepository(db)
 	log.Info().Msg("Repositories initialized successfully")
+
+	// Initialize HTTP clients
+	tripsClient := httpClient.NewTripsClient(httpClient.HTTPClientConfig{
+		BaseURL:        cfg.HTTP.TripsAPIURL,
+		Timeout:        time.Duration(cfg.HTTP.Timeout) * time.Second,
+		MaxRetries:     cfg.HTTP.MaxRetries,
+		RetryWaitTime:  1 * time.Second,
+		CircuitBreaker: httpClient.NewCircuitBreaker(5, 30*time.Second),
+	})
+	usersClient := httpClient.NewUsersClient(httpClient.HTTPClientConfig{
+		BaseURL:        cfg.HTTP.UsersAPIURL,
+		Timeout:        time.Duration(cfg.HTTP.Timeout) * time.Second,
+		MaxRetries:     cfg.HTTP.MaxRetries,
+		RetryWaitTime:  1 * time.Second,
+		CircuitBreaker: httpClient.NewCircuitBreaker(5, 30*time.Second),
+	})
+	log.Info().Msg("HTTP clients initialized successfully")
+
+	// Initialize trip event service
+	tripEventService := service.NewTripEventService(
+		tripRepo,
+		eventRepo,
+		tripsClient,
+		usersClient,
+		solrClient,
+		cacheService,
+	)
+	log.Info().Msg("Trip event service initialized successfully")
+
+	// Initialize RabbitMQ consumer
+	consumer, err := messaging.NewConsumer(cfg.RabbitMQ.URL, cfg.RabbitMQ.QueueName, tripEventService)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize RabbitMQ consumer")
+	}
+	log.Info().Msg("RabbitMQ consumer initialized successfully")
+
+	// Start consumer in background
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+	defer consumerCancel()
+	go consumer.Start(consumerCtx, cfg.RabbitMQ.URL)
+	log.Info().Msg("RabbitMQ consumer started in background")
 
 	// Initialize controllers
 	healthController := controller.NewHealthController(
@@ -119,6 +179,12 @@ func main() {
 	<-quit
 
 	log.Info().Msg("Shutting down search-api server")
+
+	// Stop RabbitMQ consumer first
+	consumerCancel()
+	if err := consumer.Close(); err != nil {
+		log.Error().Err(err).Msg("Failed to close RabbitMQ consumer gracefully")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
