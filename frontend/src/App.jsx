@@ -9,6 +9,9 @@ import { LoginPage } from '@/pages/auth/LoginPage';
 import { RegisterPage } from '@/pages/auth/RegisterPage';
 import { RegisterDebug } from '@/pages/auth/RegisterDebug';
 import { TripsPage } from '@/pages/trips/TripsPage';
+import { TripsListPage } from '@/pages/trips/TripsListPage';
+import { TripDetailsPage } from '@/pages/trips/TripDetailsPage';
+import { TripFormPage } from '@/pages/trips/TripFormPage';
 import { ProfilePage } from '@/pages/profile/ProfilePage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
@@ -32,18 +35,48 @@ function App() {
             }
           />
 
-          {/* Protected routes with MainLayout */}
+          {/* Trips routes - public and protected */}
           <Route
             path="/trips"
             element={
               <MainLayout>
+                <TripsListPage />
+              </MainLayout>
+            }
+          />
+
+          <Route
+            path="/trips/new"
+            element={
+              <MainLayout>
                 <ProtectedRoute>
-                  <TripsPage />
+                  <TripFormPage />
                 </ProtectedRoute>
               </MainLayout>
             }
           />
 
+          <Route
+            path="/trips/:id"
+            element={
+              <MainLayout>
+                <TripDetailsPage />
+              </MainLayout>
+            }
+          />
+
+          <Route
+            path="/trips/:id/edit"
+            element={
+              <MainLayout>
+                <ProtectedRoute>
+                  <TripFormPage />
+                </ProtectedRoute>
+              </MainLayout>
+            }
+          />
+
+          {/* Protected routes with MainLayout */}
           <Route
             path="/profile"
             element={

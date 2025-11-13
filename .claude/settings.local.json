@@ -6,7 +6,16 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(git rm:*)",
-      "Bash(gofmt:*)"
+      "Bash(gofmt:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker network inspect:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(curl:*)",
+      "Bash(npm run dev:*)"
     ],
     "deny": [],
     "ask": []
