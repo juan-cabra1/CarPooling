@@ -67,7 +67,7 @@ func mapErrorCodeToHTTPStatus(code string) int {
 		return http.StatusUnauthorized // 401
 	case "DUPLICATE_BOOKING":
 		return http.StatusConflict
-	case "VALIDATION_ERROR", "INSUFFICIENT_SEATS", "CANNOT_BOOK_OWN_TRIP", "INVALID_INPUT", "TRIP_NOT_PUBLISHED", "CANNOT_CANCEL_COMPLETED":
+	case "VALIDATION_ERROR", "INSUFFICIENT_SEATS", "CANNOT_BOOK_OWN_TRIP", "INVALID_INPUT", "TRIP_NOT_PUBLISHED", "CANNOT_CANCEL_COMPLETED", "BOOKING_ALREADY_CANCELLED":
 		return http.StatusBadRequest
 	case "TRIPS_API_UNAVAILABLE":
 		return http.StatusServiceUnavailable

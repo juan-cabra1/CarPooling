@@ -1,21 +1,20 @@
 package routes
 
 import (
-	"time"
-
+	"search-api/internal/controller"
 	"search-api/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
 
 // SetupRoutes configures all routes for the search-api
-func SetupRoutes(router *gin.Engine) {
+func SetupRoutes(router *gin.Engine, healthController *controller.HealthController) {
 	// Apply global middlewares
 	router.Use(middleware.ErrorHandler())
 	router.Use(middleware.CORSMiddleware())
 
 	// Health check endpoint
-	router.GET("/health", healthCheck)
+	router.GET("/health", healthController.HealthCheck)
 
 	// API v1 group
 	v1 := router.Group("/api/v1")
@@ -26,16 +25,4 @@ func SetupRoutes(router *gin.Engine) {
 		// v1.GET("/search/popular-routes", searchController.GetPopularRoutes)
 		_ = v1 // Prevent unused variable error
 	}
-}
-
-// healthCheck returns the health status of the search-api service
-func healthCheck(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"success": true,
-		"data": gin.H{
-			"status":    "ok",
-			"service":   "search-api",
-			"timestamp": time.Now().Format(time.RFC3339),
-		},
-	})
 }

@@ -254,8 +254,14 @@ func (s *bookingService) CancelBooking(ctx context.Context, bookingID string, us
 
 	// Step 4: Check if already cancelled
 	if booking.IsCancelled() {
-		log.Info().Str("booking_id", bookingID).Msg("Booking already cancelled")
-		return nil // Idempotent: already cancelled is not an error
+		log.Warn().
+			Str("booking_id", bookingID).
+			Str("status", booking.Status).
+			Msg("Cannot cancel - booking already cancelled")
+		return domain.ErrBookingAlreadyCancelled.WithDetails(map[string]interface{}{
+			"booking_id": bookingID,
+			"status":     booking.Status,
+		})
 	}
 
 	// Step 5: Cancel the booking
