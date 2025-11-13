@@ -16,6 +16,7 @@ export default defineConfig({
       '@/utils': path.resolve(__dirname, './src/utils'),
       '@/types': path.resolve(__dirname, './src/types'),
       '@/assets': path.resolve(__dirname, './src/assets'),
+      '@/lib': path.resolve(__dirname, './src/lib'),
     },
   },
   server: {
@@ -24,18 +25,22 @@ export default defineConfig({
       '/api/users': {
         target: 'http://localhost:8001',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/users/, ''),
       },
       '/api/trips': {
         target: 'http://localhost:8002',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/trips/, ''),
       },
       '/api/bookings': {
         target: 'http://localhost:8003',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/bookings/, ''),
       },
       '/api/search': {
         target: 'http://localhost:8004',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/search/, ''),
       },
     },
   },

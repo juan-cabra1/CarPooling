@@ -1,22 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { ReactNode } from 'react';
-import type { User } from '@/types';
 import { usersService } from '@/services/api';
-import type { LoginCredentials, RegisterData } from '@/services/api';
 import { authUtils } from '@/services/auth/auth.utils';
 
-interface AuthContextType {
-  user: User | null;
-  token: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (credentials: LoginCredentials) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
-  logout: () => Promise<void>;
-  updateUserData: (user: User) => void;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -26,13 +12,9 @@ export const useAuth = () => {
   return context;
 };
 
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Initialize auth state from localStorage
@@ -67,7 +49,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     initAuth();
   }, []);
 
-  const login = async (credentials: LoginCredentials) => {
+  const login = async (credentials) => {
     try {
       const response = await usersService.login(credentials);
       const { user: userData, token: authToken } = response.data;
@@ -82,7 +64,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const register = async (data: RegisterData) => {
+  const register = async (data) => {
     try {
       // Primero registrar al usuario
       await usersService.register(data);
@@ -117,12 +99,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const updateUserData = (updatedUser: User) => {
+  const updateUserData = (updatedUser) => {
     setUser(updatedUser);
     authUtils.setUser(updatedUser);
   };
 
-  const value: AuthContextType = {
+  const value = {
     user,
     token,
     isAuthenticated: !!token && !!user,

@@ -31,7 +31,7 @@ export interface UpdateUserData {
 export const usersService = {
   // Authentication
   login: async (credentials: LoginCredentials): Promise<ApiResponse<{ user: User; token: string }>> => {
-    const response = await apiClient.post('/users/login', credentials);
+    const response = await apiClient.post('/login', credentials);
     return response.data;
   },
 
@@ -68,7 +68,7 @@ export const usersService = {
 
   // Password management
   changePassword: async (currentPassword: string, newPassword: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.post('/users/change-password', {
+    const response = await apiClient.post('/change-password', {
       current_password: currentPassword,
       new_password: newPassword,
     });
@@ -76,12 +76,12 @@ export const usersService = {
   },
 
   requestPasswordReset: async (email: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.post('/users/forgot-password', { email });
+    const response = await apiClient.post('/forgot-password', { email });
     return response.data;
   },
 
   resetPassword: async (token: string, newPassword: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.post('/users/reset-password', {
+    const response = await apiClient.post('/reset-password', {
       token,
       new_password: newPassword,
     });
