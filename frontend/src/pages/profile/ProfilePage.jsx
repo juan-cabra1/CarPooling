@@ -2,10 +2,10 @@ import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card } from '@/components/common';
 
-export const ProfilePage: React.FC = () => {
+export const ProfilePage = () => {
   const { user } = useAuth();
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('es-AR', {
       year: 'numeric',
       month: 'long',

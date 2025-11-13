@@ -3,44 +3,46 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button, Card } from '@/components/common';
 
-export const HomePage: React.FC = () => {
+export const HomePage = () => {
   const { isAuthenticated } = useAuth();
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-16 lg:space-y-20">
       {/* Hero Section */}
-      <section className="text-center py-16">
-        <h1 className="text-5xl font-bold text-gray-900 mb-4">
-          Share Your Journey
+      <section className="text-center py-12 lg:py-20 animate-fade-in">
+        <div className="inline-block mb-6 lg:mb-8">
+          <span className="text-6xl lg:text-8xl">🚗</span>
+        </div>
+        <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 lg:mb-6 px-4">
+          Compartí tu Viaje
         </h1>
-        <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-          Connect with others traveling your way. Save money, reduce your carbon footprint,
-          and make new friends along the way.
+        <p className="text-lg sm:text-xl lg:text-2xl text-gray-600 mb-8 lg:mb-10 max-w-3xl mx-auto px-4 leading-relaxed">
+          Conectate con personas que viajan en tu misma dirección. Ahorrá dinero, reducí tu huella de carbono y hacé nuevos amigos en el camino.
         </p>
-        <div className="flex justify-center space-x-4">
+        <div className="flex flex-col sm:flex-row justify-center gap-4 px-4">
           {isAuthenticated ? (
             <>
               <Link to="/trips">
-                <Button variant="primary" size="lg">
-                  Find a Ride
+                <Button variant="primary" size="lg" className="w-full sm:w-auto">
+                  Buscar Viaje
                 </Button>
               </Link>
               <Link to="/trips/create">
-                <Button variant="outline" size="lg">
-                  Offer a Ride
+                <Button variant="outline" size="lg" className="w-full sm:w-auto">
+                  Ofrecer Viaje
                 </Button>
               </Link>
             </>
           ) : (
             <>
-              <Link to="/register">
-                <Button variant="primary" size="lg">
-                  Get Started
+              <Link to="/register" className="w-full sm:w-auto">
+                <Button variant="primary" size="lg" fullWidth className="sm:w-auto">
+                  Comenzar Gratis
                 </Button>
               </Link>
-              <Link to="/login">
-                <Button variant="outline" size="lg">
-                  Sign In
+              <Link to="/login" className="w-full sm:w-auto">
+                <Button variant="outline" size="lg" fullWidth className="sm:w-auto">
+                  Iniciar Sesión
                 </Button>
               </Link>
             </>
@@ -49,11 +51,11 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* Features Section */}
-      <section className="py-16">
-        <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">
-          Why Choose CarPooling?
+      <section className="py-12 lg:py-16">
+        <h2 className="text-3xl lg:text-4xl font-bold text-center text-gray-900 mb-10 lg:mb-16 px-4">
+          ¿Por qué elegir CarPooling?
         </h2>
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 px-4">
           <Card>
             <div className="text-center">
               <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">

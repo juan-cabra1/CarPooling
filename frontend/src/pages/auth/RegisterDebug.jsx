@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { Card, Button } from '@/components/common';
 import axios from 'axios';
 
-export const RegisterDebug: React.FC = () => {
-  const [response, setResponse] = useState<any>(null);
-  const [error, setError] = useState<any>(null);
+export const RegisterDebug = () => {
+  const [response, setResponse] = useState(null);
+  const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const testData = {
@@ -36,7 +36,7 @@ export const RegisterDebug: React.FC = () => {
 
       console.log('✅ Respuesta exitosa:', result.data);
       setResponse(result.data);
-    } catch (err: any) {
+    } catch (err) {
       console.error('❌ Error:', err);
       setError({
         message: err.message,
@@ -62,7 +62,7 @@ export const RegisterDebug: React.FC = () => {
       const result = await axios.get('http://localhost:8001/health');
       console.log('✅ Health OK:', result.data);
       setResponse(result.data);
-    } catch (err: any) {
+    } catch (err) {
       console.error('❌ Error en health:', err);
       setError({ message: err.message });
     } finally {
