@@ -1,9 +1,9 @@
 package solr
 
 import (
-	"encoding/json"
 	"fmt"
 	"search-api/internal/domain"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	solr "github.com/rtt/Go-Solr"
@@ -17,7 +17,34 @@ type Client struct {
 
 // NewClient creates a new Solr client
 func NewClient(baseURL, core string) (*Client, error) {
-	conn, err := solr.NewConnection(baseURL, core)
+	// Parse baseURL to extract host and port
+	// baseURL format: http://localhost:8983 or https://host:port
+	var host string
+	var port int
+
+	// Simple parsing - assuming format http://host:port or https://host:port
+	if len(baseURL) > 7 && baseURL[:7] == "http://" {
+		baseURL = baseURL[7:]
+	} else if len(baseURL) > 8 && baseURL[:8] == "https://" {
+		baseURL = baseURL[8:]
+	}
+
+	// Default port for Solr
+	host = baseURL
+	port = 8983
+
+	// Try to parse host:port
+	if idx := len(baseURL) - 1; idx > 0 {
+		for i := len(baseURL) - 1; i >= 0; i-- {
+			if baseURL[i] == ':' {
+				host = baseURL[:i]
+				fmt.Sscanf(baseURL[i+1:], "%d", &port)
+				break
+			}
+		}
+	}
+
+	conn, err := solr.Init(host, port, core)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Solr connection: %w", err)
 	}
@@ -42,15 +69,15 @@ func (c *Client) Index(trip *domain.SearchTrip) error {
 	// Map SearchTrip to Solr document
 	doc := MapTripToSolrDocument(trip)
 
-	// Convert to Solr document format
-	solrDoc := solr.Document{}
-	for key, value := range doc {
-		solrDoc.Set(key, value)
+	// Prepare update command
+	updateDoc := map[string]interface{}{
+		"add": map[string]interface{}{
+			"doc": doc,
+		},
 	}
 
 	// Add document to Solr
-	docs := []solr.Document{solrDoc}
-	if _, err := c.conn.Update(docs, true); err != nil {
+	if _, err := c.conn.Update(updateDoc, true); err != nil {
 		log.Error().
 			Err(err).
 			Str("trip_id", trip.TripID).
@@ -73,19 +100,14 @@ func (c *Client) Delete(tripID string) error {
 	}
 
 	// Delete by ID
-	query := map[string]interface{}{
+	deleteDoc := map[string]interface{}{
 		"delete": map[string]interface{}{
 			"id": tripID,
 		},
 	}
 
-	queryJSON, err := json.Marshal(query)
-	if err != nil {
-		return fmt.Errorf("failed to marshal delete query: %w", err)
-	}
-
 	// Execute delete
-	resp, err := c.conn.CustomUpdate(string(queryJSON), true)
+	resp, err := c.conn.Update(deleteDoc, true)
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -128,14 +150,14 @@ func (c *Client) Search(query *SearchQuery) (*SearchResponse, error) {
 		Docs:     make([]map[string]interface{}, 0),
 	}
 
-	// Extract documents
-	for _, doc := range resp.Results.Docs {
-		searchResp.Docs = append(searchResp.Docs, doc)
+	// Extract documents from Collection
+	for _, doc := range resp.Results.Collection {
+		searchResp.Docs = append(searchResp.Docs, doc.Fields)
 	}
 
 	// Extract facets if available
-	if resp.Facets != nil {
-		searchResp.Facets = resp.Facets
+	if resp.Results.Facets != nil && len(resp.Results.Facets) > 0 {
+		searchResp.Facets = resp.Results.Facets
 	}
 
 	log.Debug().

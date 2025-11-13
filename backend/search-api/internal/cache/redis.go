@@ -5,32 +5,29 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/bradfitz/gomemcache/memcache"
 )
 
-// RedisCache implementa la interface Cache usando Redis
+// RedisCache implementa la interface Cache usando Memcache
+// Mantiene el nombre RedisCache por compatibilidad con código existente
 type RedisCache struct {
-	client *redis.Client
+	client *memcache.Client
 }
 
-// NewRedisCache crea una nueva instancia de RedisCache
+// NewRedisCache crea una nueva instancia de RedisCache (usando Memcache internamente)
+// Los parámetros password y db son ignorados ya que Memcache no los usa
 func NewRedisCache(addr string, password string, db int) (*RedisCache, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:         addr,
-		Password:     password,
-		DB:           db,
-		DialTimeout:  5 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-		PoolSize:     10,
-		MinIdleConns: 5,
-	})
+	// Memcache acepta múltiples servidores, pero pasamos uno solo
+	client := memcache.New(addr)
+
+	// Configurar timeouts
+	client.Timeout = 3 * time.Second
+	client.MaxIdleConns = 10
 
 	// Verificar conexión con ping
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+	if err := client.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to connect to Memcache: %w", err)
 	}
 
 	return &RedisCache{client: client}, nil
@@ -38,20 +35,26 @@ func NewRedisCache(addr string, password string, db int) (*RedisCache, error) {
 
 // Get obtiene un valor del cache por su key
 func (r *RedisCache) Get(ctx context.Context, key string) (string, error) {
-	val, err := r.client.Get(ctx, key).Result()
-	if err == redis.Nil {
+	item, err := r.client.Get(key)
+	if err == memcache.ErrCacheMiss {
 		// Key no existe, retornar string vacío (no es error)
 		return "", nil
 	}
 	if err != nil {
 		return "", fmt.Errorf("error getting key %s: %w", key, err)
 	}
-	return val, nil
+	return string(item.Value), nil
 }
 
 // Set guarda un valor en el cache con un TTL
 func (r *RedisCache) Set(ctx context.Context, key string, value string, ttl time.Duration) error {
-	err := r.client.Set(ctx, key, value, ttl).Err()
+	item := &memcache.Item{
+		Key:        key,
+		Value:      []byte(value),
+		Expiration: int32(ttl.Seconds()),
+	}
+
+	err := r.client.Set(item)
 	if err != nil {
 		return fmt.Errorf("error setting key %s: %w", key, err)
 	}
@@ -60,109 +63,109 @@ func (r *RedisCache) Set(ctx context.Context, key string, value string, ttl time
 
 // Delete elimina una key del cache
 func (r *RedisCache) Delete(ctx context.Context, key string) error {
-	err := r.client.Del(ctx, key).Err()
-	if err != nil {
+	err := r.client.Delete(key)
+	if err != nil && err != memcache.ErrCacheMiss {
 		return fmt.Errorf("error deleting key %s: %w", key, err)
 	}
+	// Si no existe, no es error
 	return nil
 }
 
 // Exists verifica si una key existe en el cache
 func (r *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
-	result, err := r.client.Exists(ctx, key).Result()
+	_, err := r.client.Get(key)
+	if err == memcache.ErrCacheMiss {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("error checking existence of key %s: %w", key, err)
 	}
-	return result > 0, nil
+	return true, nil
 }
 
-// Close cierra la conexión con Redis
+// Close cierra la conexión con Memcache
+// Memcache no requiere close explícito, pero mantenemos el método por compatibilidad
 func (r *RedisCache) Close() error {
-	if r.client != nil {
-		return r.client.Close()
-	}
+	// Memcache cierra conexiones automáticamente
 	return nil
 }
 
 // GetWithTTL obtiene un valor y su TTL restante
+// NOTA: Memcache no soporta obtener el TTL restante, por lo que retornamos 0
 func (r *RedisCache) GetWithTTL(ctx context.Context, key string) (string, time.Duration, error) {
-	pipe := r.client.Pipeline()
-	getCmd := pipe.Get(ctx, key)
-	ttlCmd := pipe.TTL(ctx, key)
-
-	_, err := pipe.Exec(ctx)
-	if err != nil && err != redis.Nil {
-		return "", 0, fmt.Errorf("error in pipeline: %w", err)
-	}
-
-	val, err := getCmd.Result()
-	if err == redis.Nil {
+	item, err := r.client.Get(key)
+	if err == memcache.ErrCacheMiss {
 		return "", 0, nil
 	}
 	if err != nil {
 		return "", 0, fmt.Errorf("error getting key: %w", err)
 	}
 
-	ttl, err := ttlCmd.Result()
-	if err != nil {
-		return val, 0, fmt.Errorf("error getting TTL: %w", err)
-	}
-
-	return val, ttl, nil
+	// Memcache no expone el TTL restante, retornamos 0
+	return string(item.Value), 0, nil
 }
 
 // SetNX (Set if Not eXists) - útil para locks o cache único
 func (r *RedisCache) SetNX(ctx context.Context, key string, value string, ttl time.Duration) (bool, error) {
-	result, err := r.client.SetNX(ctx, key, value, ttl).Result()
+	item := &memcache.Item{
+		Key:        key,
+		Value:      []byte(value),
+		Expiration: int32(ttl.Seconds()),
+	}
+
+	err := r.client.Add(item)
+	if err == memcache.ErrNotStored {
+		// La key ya existe
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("error in SetNX for key %s: %w", key, err)
 	}
-	return result, nil
+	return true, nil
 }
 
 // Increment incrementa un valor numérico (útil para contadores)
 func (r *RedisCache) Increment(ctx context.Context, key string) (int64, error) {
-	result, err := r.client.Incr(ctx, key).Result()
+	// Memcache Increment requiere que la key ya exista
+	// Intentamos incrementar, si no existe la creamos con valor 1
+	newValue, err := r.client.Increment(key, 1)
+	if err == memcache.ErrCacheMiss {
+		// Key no existe, la creamos con valor 1
+		item := &memcache.Item{
+			Key:        key,
+			Value:      []byte("1"),
+			Expiration: 0, // Sin expiración
+		}
+		if err := r.client.Add(item); err != nil {
+			return 0, fmt.Errorf("error creating counter key %s: %w", key, err)
+		}
+		return 1, nil
+	}
 	if err != nil {
 		return 0, fmt.Errorf("error incrementing key %s: %w", key, err)
 	}
-	return result, nil
+	return int64(newValue), nil
 }
 
 // DeletePattern elimina todas las keys que coincidan con un patrón
+// NOTA: Memcache no soporta búsqueda por patrón, esta funcionalidad está limitada
+// Para una implementación completa, necesitarías mantener un índice de keys
 func (r *RedisCache) DeletePattern(ctx context.Context, pattern string) (int64, error) {
-	var cursor uint64
-	var deleted int64
-
-	for {
-		keys, nextCursor, err := r.client.Scan(ctx, cursor, pattern, 100).Result()
-		if err != nil {
-			return deleted, fmt.Errorf("error scanning keys: %w", err)
-		}
-
-		if len(keys) > 0 {
-			n, err := r.client.Del(ctx, keys...).Result()
-			if err != nil {
-				return deleted, fmt.Errorf("error deleting keys: %w", err)
-			}
-			deleted += n
-		}
-
-		cursor = nextCursor
-		if cursor == 0 {
-			break
-		}
-	}
-
-	return deleted, nil
+	// Memcache no soporta SCAN o búsqueda por patrón
+	// Esta es una limitación conocida de Memcache
+	// Retornamos error indicando que no está soportado
+	return 0, fmt.Errorf("DeletePattern not supported by Memcache (pattern: %s)", pattern)
 }
 
-// Ping verifica la conexión con Redis
+// Ping verifica la conexión con Memcache
 func (r *RedisCache) Ping(ctx context.Context) error {
-	return r.client.Ping(ctx).Err()
+	return r.client.Ping()
 }
 
-// Stats retorna estadísticas del cliente Redis
-func (r *RedisCache) Stats() *redis.PoolStats {
-	return r.client.PoolStats()
+// Stats retorna estadísticas del servidor Memcache
+// Retorna nil ya que el formato de stats es diferente entre Redis y Memcache
+func (r *RedisCache) Stats() interface{} {
+	// Memcache tiene su propio formato de stats
+	// Para mantener compatibilidad, retornamos nil
+	return nil
 }
