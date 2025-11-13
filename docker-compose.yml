@@ -96,6 +96,26 @@ services:
     networks:
       - carpooling-network
 
+  solr:
+    image: solr:9-slim
+    container_name: solr
+    restart: unless-stopped
+    ports:
+      - "8983:8983"
+    environment:
+      SOLR_HEAP: 512m
+    volumes:
+      - solr_data:/var/solr
+    command: solr-precreate carpooling_trips
+    networks:
+      - carpooling-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8983/solr/admin/cores?action=STATUS" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
   # --------------------------------------------------------------------------
   # MICROSERVICES
   # --------------------------------------------------------------------------
@@ -180,6 +200,50 @@ services:
       retries: 3
       start_period: 40s
 
+  search-api:
+    build: ./backend/search-api
+    container_name: search-api
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    environment:
+      SERVER_PORT: 8004
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-admin123}@mongo:27017/carpooling_search?authSource=admin
+      MONGO_DB: carpooling_search
+      SOLR_URL: http://solr:8983/solr
+      SOLR_CORE: carpooling_trips
+      MEMCACHED_SERVERS: memcached:11211
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbit:5672/
+      QUEUE_NAME: search.events
+      USERS_API_URL: http://users-api:8001
+      TRIPS_API_URL: http://trips-api:8002
+      HTTP_TIMEOUT: 5s
+      HTTP_MAX_RETRIES: 3
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      GIN_MODE: ${GIN_MODE:-debug}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - carpooling-network
+    depends_on:
+      mongo:
+        condition: service_healthy
+      solr:
+        condition: service_healthy
+      memcached:
+        condition: service_started
+      rabbit:
+        condition: service_healthy
+      trips-api:
+        condition: service_started
+      users-api:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8004/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 networks:
   carpooling-network:
     driver: bridge
@@ -192,3 +256,4 @@ volumes:
   mysql_users_data:
   mysql_bookings_data:
   rabbit_data:
+  solr_data:

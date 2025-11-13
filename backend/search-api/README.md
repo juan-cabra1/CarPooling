@@ -255,17 +255,86 @@ docker build -t search-api:latest .
 docker run -p 8004:8004 --env-file .env search-api:latest
 ```
 
-### Using Docker Compose
+### Using Docker Compose (Recommended)
+
+The search-api is fully integrated into the root docker-compose.yml with all dependencies.
 
 ```bash
-# Start all services including dependencies
+# From the project root directory
+cd CarPooling
+
+# Start all services including search-api
 docker-compose up -d
+
+# Start only search-api and its dependencies
+docker-compose up -d search-api
 
 # View logs
 docker-compose logs -f search-api
 
+# View logs for all services
+docker-compose logs -f
+
 # Stop all services
 docker-compose down
+
+# Stop and remove volumes (clean slate)
+docker-compose down -v
+
+# Rebuild search-api after code changes
+docker-compose build search-api
+docker-compose up -d search-api
+
+# Check health status
+docker-compose ps
+curl http://localhost:8004/health
+```
+
+#### Docker Stack Includes:
+- **search-api**: The search service (port 8004)
+- **solr**: Apache Solr 9 (port 8983) with auto-initialized schema
+- **mongodb**: MongoDB with geospatial indexes
+- **memcached**: Caching layer
+- **rabbitmq**: Message broker for event consumption
+- **trips-api**: Source of trip events
+- **users-api**: Source of driver information
+
+#### Solr Setup
+
+The Solr core is automatically initialized when the container starts using the [init-solr.sh](scripts/init-solr.sh) script. The script:
+- Creates the `carpooling_trips` core
+- Defines all schema fields (trip_id, coordinates, dates, prices, etc.)
+- Sets up geospatial and text search field types
+
+To manually verify Solr:
+```bash
+# Check Solr health
+curl http://localhost:8983/solr/carpooling_trips/admin/ping
+
+# View schema
+curl http://localhost:8983/solr/carpooling_trips/schema
+
+# Query all documents
+curl "http://localhost:8983/solr/carpooling_trips/select?q=*:*"
+```
+
+#### MongoDB Indexes
+
+The search-api automatically creates necessary MongoDB indexes on startup:
+```bash
+# Connect to MongoDB
+docker exec -it mongo mongosh -u admin -p admin123 --authenticationDatabase admin
+
+# Switch to search database
+use carpooling_search
+
+# View indexes
+db.trips.getIndexes()
+
+# You should see:
+# - 2dsphere index on origin.coordinates
+# - 2dsphere index on destination.coordinates
+# - Unique index on event_id in processed_events collection
 ```
 
 ## API Endpoints
@@ -380,16 +449,64 @@ Follow clean architecture principles:
 
 ### Testing
 
+The search-api has comprehensive test coverage including unit tests, integration tests, and concurrent idempotency tests.
+
 ```bash
 # Run all tests
 go test ./...
 
-# Run with coverage
+# Run tests with verbose output
+go test -v ./...
+
+# Run tests with coverage report
 go test -cover ./...
+
+# Generate detailed coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out -o coverage.html
+
+# Run tests with race detector (important for concurrent tests)
+go test -race ./...
 
 # Run specific package tests
 go test ./internal/service/...
+go test ./internal/repository/...
+go test ./internal/controller/...
+
+# Run only idempotency tests
+go test -v ./internal/service/... -run "Idempotency|Duplicate|Concurrent"
 ```
+
+#### Test Coverage Goals
+
+- **Service Layer**: >70% coverage (CRITICAL for business logic)
+- **Repository Layer**: >80% coverage (data access validation)
+- **Controller Layer**: >60% coverage (HTTP endpoint validation)
+- **Overall Project**: >65% coverage
+
+#### Key Test Areas
+
+1. **Service Tests** ([internal/service/search_test.go](internal/service/search_test.go)):
+   - SearchTrips with cache hit/miss scenarios
+   - SearchByLocation with geospatial queries
+   - Denormalization logic with external API calls
+   - buildSearchText and calculatePopularityScore helpers
+
+2. **TripEventService Tests** ([internal/service/trip_event_service_test.go](internal/service/trip_event_service_test.go)):
+   - **Idempotency tests** (CRITICAL): Duplicate event_id is skipped
+   - **Concurrent tests**: Multiple goroutines processing same event
+   - Permanent vs transient error handling
+   - Solr failures don't block processing
+
+3. **Repository Tests**:
+   - MongoDB geospatial search with 2dsphere indexes
+   - UNIQUE constraint on event_id
+   - Concurrent duplicate event handling
+
+4. **Controller Tests**:
+   - HTTP endpoint validation
+   - Query parameter parsing
+   - Error response formats
 
 ### Logging
 
