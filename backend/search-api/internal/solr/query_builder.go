@@ -7,6 +7,11 @@ import (
 	solr "github.com/rtt/Go-Solr"
 )
 
+// addParam is a helper function to add a parameter to URLParamMap
+func addParam(params solr.URLParamMap, key, value string) {
+	params[key] = append(params[key], value)
+}
+
 // BuildSolrQuery constructs a Solr query from SearchQuery parameters
 func BuildSolrQuery(sq *SearchQuery) *solr.Query {
 	query := &solr.Query{
@@ -15,12 +20,12 @@ func BuildSolrQuery(sq *SearchQuery) *solr.Query {
 
 	// Main query (q parameter)
 	mainQuery := buildMainQuery(sq)
-	query.Params.Add("q", mainQuery)
+	addParam(query.Params, "q", mainQuery)
 
 	// Filter queries (fq parameters) - more efficient for filtering
 	filterQueries := buildFilterQueries(sq)
 	for _, fq := range filterQueries {
-		query.Params.Add("fq", fq)
+		addParam(query.Params, "fq", fq)
 	}
 
 	// Pagination
@@ -28,8 +33,8 @@ func BuildSolrQuery(sq *SearchQuery) *solr.Query {
 	if start < 0 {
 		start = 0
 	}
-	query.Params.Add("start", fmt.Sprintf("%d", start))
-	query.Params.Add("rows", fmt.Sprintf("%d", sq.Limit))
+	addParam(query.Params, "start", fmt.Sprintf("%d", start))
+	addParam(query.Params, "rows", fmt.Sprintf("%d", sq.Limit))
 
 	// Sorting
 	if sq.SortBy != "" {
@@ -37,27 +42,27 @@ func BuildSolrQuery(sq *SearchQuery) *solr.Query {
 		if sq.SortOrder == "desc" {
 			sortOrder = "desc"
 		}
-		query.Params.Add("sort", fmt.Sprintf("%s %s", sq.SortBy, sortOrder))
+		addParam(query.Params, "sort", fmt.Sprintf("%s %s", sq.SortBy, sortOrder))
 	}
 
 	// Facets
 	if sq.EnableFacets {
-		query.Params.Add("facet", "true")
+		addParam(query.Params, "facet", "true")
 		if len(sq.FacetFields) > 0 {
 			for _, field := range sq.FacetFields {
-				query.Params.Add("facet.field", field)
+				addParam(query.Params, "facet.field", field)
 			}
 		} else {
 			// Default facet fields
-			query.Params.Add("facet.field", "origin_city")
-			query.Params.Add("facet.field", "destination_city")
-			query.Params.Add("facet.field", "status")
+			addParam(query.Params, "facet.field", "origin_city")
+			addParam(query.Params, "facet.field", "destination_city")
+			addParam(query.Params, "facet.field", "status")
 		}
-		query.Params.Add("facet.mincount", "1")
+		addParam(query.Params, "facet.mincount", "1")
 	}
 
 	// Response format
-	query.Params.Add("wt", "json")
+	addParam(query.Params, "wt", "json")
 
 	return query
 }
@@ -164,17 +169,17 @@ func BuildAutocompleteQuery(prefix string, field string, limit int) *solr.Query 
 
 	// Use wildcard query for prefix matching
 	queryStr := fmt.Sprintf("%s:%s*", field, escapeSolrQuery(prefix))
-	query.Params.Add("q", queryStr)
-	query.Params.Add("rows", fmt.Sprintf("%d", limit))
-	query.Params.Add("wt", "json")
+	addParam(query.Params, "q", queryStr)
+	addParam(query.Params, "rows", fmt.Sprintf("%d", limit))
+	addParam(query.Params, "wt", "json")
 
 	// Return only the relevant field
-	query.Params.Add("fl", field)
+	addParam(query.Params, "fl", field)
 
 	// Group by field to get unique values
-	query.Params.Add("group", "true")
-	query.Params.Add("group.field", field)
-	query.Params.Add("group.limit", "1")
+	addParam(query.Params, "group", "true")
+	addParam(query.Params, "group.field", field)
+	addParam(query.Params, "group.limit", "1")
 
 	return query
 }
@@ -185,13 +190,13 @@ func BuildFacetQuery(facetFields []string) *solr.Query {
 		Params: solr.URLParamMap{},
 	}
 
-	query.Params.Add("q", "*:*")
-	query.Params.Add("rows", "0") // We only want facets, not documents
-	query.Params.Add("facet", "true")
-	query.Params.Add("facet.mincount", "1")
+	addParam(query.Params, "q", "*:*")
+	addParam(query.Params, "rows", "0") // We only want facets, not documents
+	addParam(query.Params, "facet", "true")
+	addParam(query.Params, "facet.mincount", "1")
 
 	for _, field := range facetFields {
-		query.Params.Add("facet.field", field)
+		addParam(query.Params, "facet.field", field)
 	}
 
 	// JSON facets for more advanced aggregations
@@ -223,9 +228,9 @@ func BuildFacetQuery(facetFields []string) *solr.Query {
 			}
 		}
 	}`
-	query.Params.Add("json.facet", jsonFacets)
+	addParam(query.Params, "json.facet", jsonFacets)
 
-	query.Params.Add("wt", "json")
+	addParam(query.Params, "wt", "json")
 
 	return query
 }
