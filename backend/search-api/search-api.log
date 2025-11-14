@@ -1,0 +1,5 @@
+[90m4:02AM[0m [32mINF[0m [1mStarting search-api[0m
+[90m4:02AM[0m [32mINF[0m [1mConfiguration loaded successfully[0m
+2025/11/14 04:02:27 ✅ MongoDB connected successfully to database: carpooling
+[90m4:02AM[0m [31mFTL[0m [1mFailed to create MongoDB indexes[0m [36merror=[0m[31m[1m"failed to create trips indexes: (Unauthorized) Command createIndexes requires authentication"[0m[0m
+exit status 1

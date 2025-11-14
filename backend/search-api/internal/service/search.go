@@ -8,10 +8,9 @@ import (
 	"time"
 
 	"search-api/internal/cache"
+	"search-api/internal/clients"
 	"search-api/internal/domain"
-	"search-api/internal/http"
 	"search-api/internal/repository"
-	"search-api/internal/solr"
 
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -49,9 +48,9 @@ type searchService struct {
 	tripRepo         repository.TripRepository
 	popularRouteRepo repository.PopularRouteRepository
 	cache            cache.Cache
-	solrClient       *solr.Client
-	tripsClient      http.TripsClient
-	usersClient      http.UsersClient
+	solrClient       *clients.SolrClient
+	tripsClient      clients.TripsClient
+	usersClient      clients.UsersClient
 	cacheTTL         time.Duration
 }
 
@@ -60,9 +59,9 @@ func NewSearchService(
 	tripRepo repository.TripRepository,
 	popularRouteRepo repository.PopularRouteRepository,
 	cache cache.Cache,
-	solrClient *solr.Client,
-	tripsClient http.TripsClient,
-	usersClient http.UsersClient,
+	solrClient *clients.SolrClient,
+	tripsClient clients.TripsClient,
+	usersClient clients.UsersClient,
 ) SearchService {
 	return &searchService{
 		tripRepo:         tripRepo,
@@ -340,8 +339,8 @@ func (s *searchService) DenormalizeTrip(ctx context.Context, tripID string) erro
 		TripID:                   trip.ID.Hex(),
 		DriverID:                 trip.DriverID,
 		Driver:                   s.mapUserToDriver(driver),
-		Origin:                   trip.Origin,
-		Destination:              trip.Destination,
+		Origin:                   trip.Origin.ToLocation(),
+		Destination:              trip.Destination.ToLocation(),
 		DepartureDatetime:        trip.DepartureDatetime,
 		EstimatedArrivalDatetime: trip.EstimatedArrivalDatetime,
 		PricePerSeat:             trip.PricePerSeat,
@@ -372,7 +371,7 @@ func (s *searchService) DenormalizeTrip(ctx context.Context, tripID string) erro
 
 	// Step 7: Index in Solr (graceful degradation if Solr is down)
 	if s.solrClient != nil {
-		if err := s.solrClient.Index(searchTrip); err != nil {
+		if err := s.solrClient.Index(ctx, searchTrip); err != nil {
 			// Log warning but don't fail the operation
 			log.Warn().
 				Err(err).
@@ -478,28 +477,61 @@ func (s *searchService) cacheTripData(ctx context.Context, cacheKey string, trip
 
 // searchWithSolr performs search using Apache Solr
 func (s *searchService) searchWithSolr(ctx context.Context, query *domain.SearchQuery) ([]*domain.SearchTrip, int64, error) {
-	// Build Solr query
-	solrQuery := s.buildSolrQuery(query)
+	// Build simple query string
+	queryStr := "*:*"
+	if query.SearchText != "" {
+		queryStr = fmt.Sprintf("search_text:%s", query.SearchText)
+	}
 
-	// Execute Solr search
-	resp, err := s.solrClient.Search(solrQuery)
+	// Build filters map
+	filters := make(map[string]interface{})
+	filters["status"] = "published"
+
+	if query.OriginCity != "" {
+		filters["origin_city"] = query.OriginCity
+	}
+	if query.DestinationCity != "" {
+		filters["destination_city"] = query.DestinationCity
+	}
+	if query.MinSeats > 0 {
+		filters["available_seats"] = fmt.Sprintf("[%d TO *]", query.MinSeats)
+	}
+	if query.MaxPrice > 0 {
+		filters["price_per_seat"] = fmt.Sprintf("[* TO %f]", query.MaxPrice)
+	}
+
+	// Execute Solr search with new simple client
+	docs, total, err := s.solrClient.Search(ctx, queryStr, filters, query.Page, query.Limit)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	// Convert Solr documents to SearchTrip entities
-	// Note: Solr returns map[string]interface{}, we need to fetch full data from MongoDB
-	// For now, extract trip IDs and fetch from MongoDB
-	tripIDs := make([]string, 0, len(resp.Docs))
-	for _, doc := range resp.Docs {
+	// Extract trip IDs and fetch full data from MongoDB for complete details
+	tripIDs := make([]string, 0, len(docs))
+	for _, doc := range docs {
 		if id, ok := doc["id"].(string); ok {
 			tripIDs = append(tripIDs, id)
 		}
 	}
 
-	// TODO: Batch fetch trips from MongoDB by IDs
-	// For now, use MongoDB search as fallback
-	return nil, 0, fmt.Errorf("solr to mongodb mapping not fully implemented")
+	// If no results from Solr, return empty
+	if len(tripIDs) == 0 {
+		return []*domain.SearchTrip{}, 0, nil
+	}
+
+	// Fetch trips from MongoDB one by one (TODO: implement batch fetch)
+	trips := make([]*domain.SearchTrip, 0, len(tripIDs))
+	for _, tripID := range tripIDs {
+		trip, err := s.tripRepo.FindByTripID(ctx, tripID)
+		if err != nil {
+			log.Warn().Err(err).Str("trip_id", tripID).Msg("Failed to fetch trip from MongoDB, skipping")
+			continue
+		}
+		trips = append(trips, trip)
+	}
+
+	return trips, int64(total), nil
 }
 
 // searchWithMongoDB performs search using MongoDB
@@ -514,50 +546,6 @@ func (s *searchService) searchWithMongoDB(ctx context.Context, query *domain.Sea
 	}
 
 	return trips, total, nil
-}
-
-// buildSolrQuery converts SearchQuery to Solr query
-func (s *searchService) buildSolrQuery(query *domain.SearchQuery) *solr.SearchQuery {
-	solrQuery := &solr.SearchQuery{
-		Page:  query.Page,
-		Limit: query.Limit,
-	}
-
-	// Full-text search
-	if query.SearchText != "" {
-		solrQuery.Query = query.SearchText
-	} else {
-		solrQuery.Query = "*:*"
-	}
-
-	// City filters
-	if query.OriginCity != "" {
-		solrQuery.OriginCity = query.OriginCity
-	}
-	if query.DestinationCity != "" {
-		solrQuery.DestinationCity = query.DestinationCity
-	}
-
-	// Other filters
-	solrQuery.MinSeats = query.MinSeats
-	solrQuery.MaxPrice = query.MaxPrice
-	solrQuery.PetsAllowed = query.PetsAllowed
-	solrQuery.SmokingAllowed = query.SmokingAllowed
-	solrQuery.MusicAllowed = query.MusicAllowed
-	solrQuery.Status = "published"
-
-	// Date range
-	if !query.DateFrom.IsZero() {
-		solrQuery.DepartureFrom = query.DateFrom
-	}
-	if !query.DateTo.IsZero() {
-		solrQuery.DepartureTo = query.DateTo
-	}
-
-	// Sorting
-	s.applySorting(solrQuery, query.SortBy)
-
-	return solrQuery
 }
 
 // buildMongoFilters converts SearchQuery to MongoDB filters
@@ -615,31 +603,6 @@ func (s *searchService) buildMongoFilters(query *domain.SearchQuery) map[string]
 	}
 
 	return filters
-}
-
-// applySorting applies sorting to Solr query
-func (s *searchService) applySorting(solrQuery *solr.SearchQuery, sortBy string) {
-	switch sortBy {
-	case "price_asc":
-		solrQuery.SortBy = "price_per_seat"
-		solrQuery.SortOrder = "asc"
-	case "price_desc":
-		solrQuery.SortBy = "price_per_seat"
-		solrQuery.SortOrder = "desc"
-	case "date_asc":
-		solrQuery.SortBy = "departure_datetime"
-		solrQuery.SortOrder = "asc"
-	case "date_desc":
-		solrQuery.SortBy = "departure_datetime"
-		solrQuery.SortOrder = "desc"
-	case "popularity":
-		solrQuery.SortBy = "popularity_score"
-		solrQuery.SortOrder = "desc"
-	default:
-		// Default to popularity
-		solrQuery.SortBy = "popularity_score"
-		solrQuery.SortOrder = "desc"
-	}
 }
 
 // buildSearchResponse builds a SearchResponse from results

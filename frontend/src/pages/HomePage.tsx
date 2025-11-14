@@ -13,10 +13,10 @@ export default function HomePage() {
   useEffect(() => {
     const fetchFeaturedTrips = async () => {
       try {
-        // Obtener viajes destacados (limitamos a 6)
+        // Obtener viajes disponibles desde search-api (con datos denormalizados del conductor)
         const response = await searchService.searchTrips({
-          sort_by: 'popularity',
-          limit: 6,
+          page: 1,
+          limit: 20,
         })
         setFeaturedTrips(response.trips)
       } catch (error) {
@@ -101,13 +101,13 @@ export default function HomePage() {
           <div>
             <h2 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
               <TrendingUp className="w-8 h-8 text-primary" />
-              Viajes Destacados
+              Todos los Viajes Disponibles
             </h2>
-            <p className="text-gray-600">Los viajes más populares del momento</p>
+            <p className="text-gray-600">Encuentra el viaje perfecto para tu próximo destino</p>
           </div>
           <Link to="/search">
             <Button variant="outline" className="hidden md:flex">
-              Ver Todos
+              Buscar
               <Search className="w-4 h-4 ml-2" />
             </Button>
           </Link>

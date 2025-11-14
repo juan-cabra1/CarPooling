@@ -24,7 +24,7 @@ func LoadConfig() (*Config, error) {
 	databaseURL := getEnv("DATABASE_URL", "")
 	if databaseURL == "" {
 		dbUser := getEnv("DB_USER", "root")
-		dbPassword := getEnv("DB_PASSWORD", "")
+		dbPassword := getEnv("DB_PASSWORD", "Asmfn557")
 		dbHost := getEnv("DB_HOST", "localhost")
 		dbPort := getEnv("DB_PORT", "3306")
 		dbName := getEnv("DB_NAME", "carpooling_users")
@@ -40,7 +40,7 @@ func LoadConfig() (*Config, error) {
 		SMTPPort:     getEnv("SMTP_PORT", "587"),
 		SMTPFrom:     getEnv("SMTP_FROM", "marcelinho.nelson@gmail.com"),
 		SMTPPassword: getEnv("SMTP_PASSWORD", "nhrw ylah yhvw qraj"),
-		AppURL:       getEnv("APP_URL", "http://localhost:3000"),
+		AppURL:       getEnv("APP_URL", "http://localhost:3001"),
 	}, nil
 }
 

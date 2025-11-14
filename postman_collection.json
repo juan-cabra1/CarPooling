@@ -1,0 +1,349 @@
+{
+  "info": {
+    "name": "CarPooling API - Complete Test Suite",
+    "description": "Colección completa para probar search-api y crear viajes de prueba",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url_users",
+      "value": "http://localhost:8001",
+      "type": "string"
+    },
+    {
+      "key": "base_url_trips",
+      "value": "http://localhost:8002",
+      "type": "string"
+    },
+    {
+      "key": "base_url_search",
+      "value": "http://localhost:8004",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Register New User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    pm.test('Usuario creado exitosamente', function() {",
+                  "        pm.response.to.have.status(201);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"conductor@test.com\",\n  \"password\": \"password123\",\n  \"first_name\": \"Juan\",\n  \"last_name\": \"Pérez\",\n  \"phone\": \"+5491112345678\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_users}}/auth/register",
+              "host": ["{{base_url_users}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.collectionVariables.set('jwt_token', jsonData.data.token);",
+                  "    pm.test('Token obtenido exitosamente', function() {",
+                  "        pm.expect(jsonData.data.token).to.be.a('string');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"conductor@test.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_users}}/auth/login",
+              "host": ["{{base_url_users}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Create Trip",
+      "item": [
+        {
+          "name": "Create Trip - Buenos Aires to Córdoba",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Viaje creado exitosamente', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "    pm.expect(jsonData.data.status).to.equal('published');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"city\": \"Buenos Aires\",\n    \"address\": \"Av. Corrientes 1000\",\n    \"coordinates\": [-58.3816, -34.6037]\n  },\n  \"destination\": {\n    \"city\": \"Córdoba\",\n    \"address\": \"Av. Colón 500\",\n    \"coordinates\": [-64.1888, -31.4201]\n  },\n  \"departure_datetime\": \"2025-11-20T10:00:00Z\",\n  \"estimated_arrival_datetime\": \"2025-11-20T18:00:00Z\",\n  \"price_per_seat\": 5000.00,\n  \"total_seats\": 4,\n  \"car\": {\n    \"brand\": \"Toyota\",\n    \"model\": \"Corolla\",\n    \"year\": 2020,\n    \"color\": \"Blanco\",\n    \"plate\": \"ABC123\"\n  },\n  \"preferences\": {\n    \"smoking\": false,\n    \"pets\": true,\n    \"music\": true,\n    \"conversation\": true\n  },\n  \"description\": \"Viaje cómodo con paradas\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_trips}}/trips",
+              "host": ["{{base_url_trips}}"],
+              "path": ["trips"]
+            }
+          }
+        },
+        {
+          "name": "Create Trip - Rosario to Mendoza",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"city\": \"Rosario\",\n    \"address\": \"Av. Pellegrini 500\",\n    \"coordinates\": [-60.6393, -32.9442]\n  },\n  \"destination\": {\n    \"city\": \"Mendoza\",\n    \"address\": \"Av. San Martín 1000\",\n    \"coordinates\": [-68.8272, -32.8908]\n  },\n  \"departure_datetime\": \"2025-11-22T08:00:00Z\",\n  \"estimated_arrival_datetime\": \"2025-11-22T18:00:00Z\",\n  \"price_per_seat\": 8000.00,\n  \"total_seats\": 3,\n  \"car\": {\n    \"brand\": \"Ford\",\n    \"model\": \"Focus\",\n    \"year\": 2019,\n    \"color\": \"Azul\",\n    \"plate\": \"XYZ789\"\n  },\n  \"preferences\": {\n    \"smoking\": false,\n    \"pets\": false,\n    \"music\": true,\n    \"conversation\": true\n  },\n  \"description\": \"Viaje directo sin paradas\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_trips}}/trips",
+              "host": ["{{base_url_trips}}"],
+              "path": ["trips"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Search API",
+      "item": [
+        {
+          "name": "Search All Trips",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Búsqueda exitosa', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "    pm.expect(jsonData.data.trips).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_search}}/api/v1/search/trips",
+              "host": ["{{base_url_search}}"],
+              "path": ["api", "v1", "search", "trips"]
+            }
+          }
+        },
+        {
+          "name": "Search by Cities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_search}}/api/v1/search/trips?origin_city=Buenos Aires&destination_city=Córdoba",
+              "host": ["{{base_url_search}}"],
+              "path": ["api", "v1", "search", "trips"],
+              "query": [
+                {
+                  "key": "origin_city",
+                  "value": "Buenos Aires"
+                },
+                {
+                  "key": "destination_city",
+                  "value": "Córdoba"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search by Date",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_search}}/api/v1/search/trips?departure_date=2025-11-20",
+              "host": ["{{base_url_search}}"],
+              "path": ["api", "v1", "search", "trips"],
+              "query": [
+                {
+                  "key": "departure_date",
+                  "value": "2025-11-20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search by Max Price",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_search}}/api/v1/search/trips?max_price=6000",
+              "host": ["{{base_url_search}}"],
+              "path": ["api", "v1", "search", "trips"],
+              "query": [
+                {
+                  "key": "max_price",
+                  "value": "6000"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search with Multiple Filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_search}}/api/v1/search/trips?origin_city=Buenos Aires&destination_city=Córdoba&max_price=6000&min_seats=2&departure_date=2025-11-20",
+              "host": ["{{base_url_search}}"],
+              "path": ["api", "v1", "search", "trips"],
+              "query": [
+                {
+                  "key": "origin_city",
+                  "value": "Buenos Aires"
+                },
+                {
+                  "key": "destination_city",
+                  "value": "Córdoba"
+                },
+                {
+                  "key": "max_price",
+                  "value": "6000"
+                },
+                {
+                  "key": "min_seats",
+                  "value": "2"
+                },
+                {
+                  "key": "departure_date",
+                  "value": "2025-11-20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search by Location (Geospatial)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_search}}/api/v1/search/location?lat=-34.6037&lon=-58.3816&max_distance=50000",
+              "host": ["{{base_url_search}}"],
+              "path": ["api", "v1", "search", "location"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "-34.6037",
+                  "description": "Latitud Buenos Aires"
+                },
+                {
+                  "key": "lon",
+                  "value": "-58.3816",
+                  "description": "Longitud Buenos Aires"
+                },
+                {
+                  "key": "max_distance",
+                  "value": "50000",
+                  "description": "50km en metros"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Popular Routes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_search}}/api/v1/search/popular-routes?limit=10",
+              "host": ["{{base_url_search}}"],
+              "path": ["api", "v1", "search", "popular-routes"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

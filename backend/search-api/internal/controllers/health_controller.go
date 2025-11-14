@@ -1,4 +1,4 @@
-package controller
+package controllers
 
 import (
 	"context"
@@ -12,14 +12,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 
+	"search-api/internal/clients"
 	"search-api/internal/config"
-	solrClient "search-api/internal/solr"
 )
 
 // HealthController handles health check endpoints
 type HealthController struct {
 	mongoClient     *mongo.Client
-	solrClient      *solrClient.Client
+	solrClient      *clients.SolrClient
 	memcachedClient *memcache.Client
 	logger          zerolog.Logger
 	config          *config.Config
@@ -42,7 +42,7 @@ type HealthCheckResponse struct {
 // NewHealthController creates a new health controller instance
 func NewHealthController(
 	mongoClient *mongo.Client,
-	solrClient *solrClient.Client,
+	solrClient *clients.SolrClient,
 	memcachedClient *memcache.Client,
 	cfg *config.Config,
 ) *HealthController {
@@ -148,7 +148,7 @@ func (hc *HealthController) checkSolrHealth(ctx context.Context) ServiceHealthSt
 	// Execute ping with timeout handling
 	done := make(chan error, 1)
 	go func() {
-		err := hc.solrClient.Ping()
+		err := hc.solrClient.Ping(ctx)
 		done <- err
 	}()
 

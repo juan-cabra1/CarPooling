@@ -1,4 +1,4 @@
-package http
+package clients
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// TripsClient defines the interface for communicating with trips-api
-type TripsClient interface {
-	GetTrip(ctx context.Context, tripID string) (*domain.Trip, error)
+// UsersClient defines the interface for communicating with users-api
+type UsersClient interface {
+	GetUser(ctx context.Context, userID int64) (*domain.User, error)
 }
 
-// tripsHTTPClient implements TripsClient using HTTP
-type tripsHTTPClient struct {
+// usersHTTPClient implements UsersClient using HTTP
+type usersHTTPClient struct {
 	baseURL        string
 	client         *http.Client
 	maxRetries     int
@@ -25,8 +25,8 @@ type tripsHTTPClient struct {
 	circuitBreaker *CircuitBreaker
 }
 
-// NewTripsClient creates a new TripsClient with the given configuration
-func NewTripsClient(config HTTPClientConfig) TripsClient {
+// NewUsersClient creates a new UsersClient with the given configuration
+func NewUsersClient(config HTTPClientConfig) UsersClient {
 	if config.Timeout == 0 {
 		config.Timeout = 5 * time.Second
 	}
@@ -40,7 +40,7 @@ func NewTripsClient(config HTTPClientConfig) TripsClient {
 		config.CircuitBreaker = NewCircuitBreaker(5, 30*time.Second)
 	}
 
-	return &tripsHTTPClient{
+	return &usersHTTPClient{
 		baseURL:        config.BaseURL,
 		client:         CreateHTTPClient(config.Timeout),
 		maxRetries:     config.MaxRetries,
@@ -49,19 +49,19 @@ func NewTripsClient(config HTTPClientConfig) TripsClient {
 	}
 }
 
-// GetTrip fetches full trip details from trips-api
-// Endpoint: GET /trips/:id
-// Returns: Trip DTO with all details
-func (c *tripsHTTPClient) GetTrip(ctx context.Context, tripID string) (*domain.Trip, error) {
-	url := fmt.Sprintf("%s/trips/%s", c.baseURL, tripID)
+// GetUser fetches user details from users-api
+// Endpoint: GET /internal/users/:id (internal route, no auth required)
+// Returns: User DTO with profile and rating information
+func (c *usersHTTPClient) GetUser(ctx context.Context, userID int64) (*domain.User, error) {
+	url := fmt.Sprintf("%s/internal/users/%d", c.baseURL, userID)
 
 	log.Debug().
-		Str("trip_id", tripID).
+		Int64("user_id", userID).
 		Str("url", url).
-		Msg("Fetching trip from trips-api")
+		Msg("Fetching user from users-api")
 
 	// Execute with circuit breaker
-	var trip *domain.Trip
+	var user *domain.User
 	err := c.circuitBreaker.Call(func() error {
 		// Create HTTP request
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -79,34 +79,35 @@ func (c *tripsHTTPClient) GetTrip(ctx context.Context, tripID string) (*domain.T
 			return err
 		}
 
-		// Handle 404 specifically for trips
+		// Handle 404 specifically for users
 		if resp.StatusCode == http.StatusNotFound {
-			return domain.ErrTripNotFound
+			return domain.ErrUserNotFound
 		}
 
 		// Parse standard response
-		var tripData domain.Trip
-		if err := ParseStandardResponse(resp, &tripData); err != nil {
+		var userData domain.User
+		if err := ParseStandardResponse(resp, &userData); err != nil {
 			return err
 		}
 
-		trip = &tripData
+		user = &userData
 		return nil
 	})
 
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("trip_id", tripID).
-			Msg("Failed to fetch trip from trips-api")
+			Int64("user_id", userID).
+			Msg("Failed to fetch user from users-api")
 		return nil, err
 	}
 
 	log.Info().
-		Str("trip_id", tripID).
-		Str("status", trip.Status).
-		Int("available_seats", trip.AvailableSeats).
-		Msg("Successfully fetched trip from trips-api")
+		Int64("user_id", userID).
+		Str("name", user.Name).
+		Float64("rating", user.AverageRatingAsDriver).
+		Int("total_trips", user.TotalTripsAsDriver).
+		Msg("Successfully fetched user from users-api")
 
-	return trip, nil
+	return user, nil
 }

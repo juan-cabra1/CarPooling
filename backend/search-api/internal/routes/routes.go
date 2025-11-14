@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"search-api/internal/controller"
+	"search-api/internal/controllers"
 	"search-api/internal/middleware"
 
 	"github.com/gin-gonic/gin"
@@ -10,8 +10,8 @@ import (
 // SetupRoutes configures all routes for the search-api
 func SetupRoutes(
 	router *gin.Engine,
-	healthController *controller.HealthController,
-	searchController *controller.SearchController,
+	healthController *controllers.HealthController,
+	searchController *controllers.SearchController,
 ) {
 	// Apply global middlewares
 	router.Use(middleware.ErrorHandler())

@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"search-api/internal/cache"
+	"search-api/internal/clients"
 	"search-api/internal/domain"
-	"search-api/internal/http"
 	"search-api/internal/repository"
-	"search-api/internal/solr"
 
 	"github.com/rs/zerolog/log"
 )
@@ -18,9 +17,9 @@ import (
 type TripEventService struct {
 	tripRepo    repository.TripRepository
 	eventRepo   repository.EventRepository
-	tripsClient http.TripsClient
-	usersClient http.UsersClient
-	solrClient  *solr.Client
+	tripsClient clients.TripsClient
+	usersClient clients.UsersClient
+	solrClient  *clients.SolrClient
 	cache       cache.Cache
 }
 
@@ -28,9 +27,9 @@ type TripEventService struct {
 func NewTripEventService(
 	tripRepo repository.TripRepository,
 	eventRepo repository.EventRepository,
-	tripsClient http.TripsClient,
-	usersClient http.UsersClient,
-	solrClient *solr.Client,
+	tripsClient clients.TripsClient,
+	usersClient clients.UsersClient,
+	solrClient *clients.SolrClient,
 	cache cache.Cache,
 ) *TripEventService {
 	return &TripEventService{
@@ -123,7 +122,7 @@ func (s *TripEventService) HandleTripCreated(ctx context.Context, eventID, tripI
 
 	// Index in Solr (optional - log error but continue)
 	if s.solrClient != nil {
-		if err := s.solrClient.Index(searchTrip); err != nil {
+		if err := s.solrClient.Index(ctx, searchTrip); err != nil {
 			log.Error().Err(err).Str("trip_id", tripID).Msg("Failed to index trip in Solr (continuing)")
 			// Don't return error - MongoDB is source of truth
 		} else {
@@ -199,7 +198,7 @@ func (s *TripEventService) HandleTripUpdated(ctx context.Context, eventID, tripI
 	if s.solrClient != nil {
 		searchTrip, err := s.tripRepo.FindByTripID(ctx, tripID)
 		if err == nil {
-			if err := s.solrClient.Index(searchTrip); err != nil {
+			if err := s.solrClient.Index(ctx, searchTrip); err != nil {
 				log.Error().Err(err).Str("trip_id", tripID).Msg("Failed to update trip in Solr (continuing)")
 			} else {
 				log.Info().Str("trip_id", tripID).Msg("Trip updated in Solr successfully")
@@ -285,7 +284,7 @@ func (s *TripEventService) HandleTripCancelled(ctx context.Context, eventID, tri
 	if s.solrClient != nil {
 		searchTrip, err := s.tripRepo.FindByTripID(ctx, tripID)
 		if err == nil {
-			if err := s.solrClient.Index(searchTrip); err != nil {
+			if err := s.solrClient.Index(ctx, searchTrip); err != nil {
 				log.Error().Err(err).Str("trip_id", tripID).Msg("Failed to update trip in Solr (continuing)")
 			} else {
 				log.Info().Str("trip_id", tripID).Msg("Trip cancelled in Solr successfully")
