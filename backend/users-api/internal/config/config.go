@@ -7,11 +7,7 @@ import (
 )
 
 type Config struct {
-	DBHost       string
-	DBPort       string
-	DBUser       string
-	DBPassword   string
-	DBName       string
+	DatabaseURL  string
 	JWTSecret    string
 	ServerPort   string
 	SMTPHost     string
@@ -24,12 +20,20 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 	godotenv.Load()
 
+	// Construir DATABASE_URL desde variables individuales si no existe
+	databaseURL := getEnv("DATABASE_URL", "")
+	if databaseURL == "" {
+		dbUser := getEnv("DB_USER", "root")
+		dbPassword := getEnv("DB_PASSWORD", "")
+		dbHost := getEnv("DB_HOST", "localhost")
+		dbPort := getEnv("DB_PORT", "3306")
+		dbName := getEnv("DB_NAME", "carpooling_users")
+
+		databaseURL = dbUser + ":" + dbPassword + "@tcp(" + dbHost + ":" + dbPort + ")/" + dbName + "?charset=utf8mb4&parseTime=True&loc=Local"
+	}
+
 	return &Config{
-		DBHost:       getEnv("DB_HOST", "localhost"),
-		DBPort:       getEnv("DB_PORT", "3306"),
-		DBUser:       getEnv("DB_USER", "root"),
-		DBPassword:   getEnv("DB_PASSWORD", "Prueba.9876"),
-		DBName:       getEnv("DB_NAME", "carpooling_users"),
+		DatabaseURL:  databaseURL,
 		JWTSecret:    getEnv("JWT_SECRET", "your-secret-key"),
 		ServerPort:   getEnv("SERVER_PORT", "8001"),
 		SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),

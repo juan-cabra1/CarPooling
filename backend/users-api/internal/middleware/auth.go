@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"strings"
+	"users-api/internal/repository"
 	"users-api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -56,6 +57,46 @@ func AuthMiddleware(authService service.AuthService) gin.HandlerFunc {
 			c.JSON(401, gin.H{
 				"success": false,
 				"error":   "claims del token inválidos",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RequireVerifiedEmail valida que el usuario tenga su email verificado
+// Este middleware debe usarse DESPUÉS de AuthMiddleware
+func RequireVerifiedEmail(userRepo repository.UserRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Obtener el user_id del contexto (viene de AuthMiddleware)
+		userID, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(401, gin.H{
+				"success": false,
+				"error":   "no autenticado",
+			})
+			c.Abort()
+			return
+		}
+
+		// Buscar el usuario en la base de datos
+		user, err := userRepo.FindByID(userID.(int64))
+		if err != nil {
+			c.JSON(401, gin.H{
+				"success": false,
+				"error":   "usuario no encontrado",
+			})
+			c.Abort()
+			return
+		}
+
+		// Verificar si el email está verificado
+		if !user.EmailVerified {
+			c.JSON(403, gin.H{
+				"success": false,
+				"error":   "debes verificar tu correo electrónico para acceder a esta funcionalidad",
 			})
 			c.Abort()
 			return

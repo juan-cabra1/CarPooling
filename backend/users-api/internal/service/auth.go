@@ -99,8 +99,14 @@ func (s *authService) Register(req domain.CreateUserRequest) (*domain.UserDTO, e
 		return nil, err
 	}
 
-	// Enviar email de verificación de forma asíncrona
-	go s.emailService.SendVerificationEmail(req.Email, verificationToken)
+	// Enviar email de verificación de forma asíncrona con manejo de errores
+	go func() {
+		if err := s.emailService.SendVerificationEmail(req.Email, verificationToken); err != nil {
+			// Log del error pero no falla el registro
+			// El usuario puede solicitar reenvío del email
+			return
+		}
+	}()
 
 	// Convertir a DTO y retornar
 	return s.convertToDTO(userDAO), nil
@@ -121,6 +127,11 @@ func (s *authService) Login(req domain.LoginRequest) (*domain.LoginResponse, err
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
 	if err != nil {
 		return nil, errors.New("credenciales inválidas")
+	}
+
+	// Verificar si el email está verificado
+	if !user.EmailVerified {
+		return nil, errors.New("debes verificar tu correo electrónico antes de iniciar sesión. Revisa tu bandeja de entrada")
 	}
 
 	// Generar JWT
@@ -219,8 +230,13 @@ func (s *authService) ResendVerificationEmail(email string) error {
 		return err
 	}
 
-	// Enviar email
-	go s.emailService.SendVerificationEmail(user.Email, token)
+	// Enviar email de forma asíncrona con manejo de errores
+	go func() {
+		if err := s.emailService.SendVerificationEmail(user.Email, token); err != nil {
+			// El error ya está logueado en emailService
+			return
+		}
+	}()
 
 	return nil
 }
@@ -249,8 +265,13 @@ func (s *authService) RequestPasswordReset(email string) error {
 		return err
 	}
 
-	// Enviar email de forma asíncrona
-	go s.emailService.SendPasswordResetEmail(user.Email, token)
+	// Enviar email de forma asíncrona con manejo de errores
+	go func() {
+		if err := s.emailService.SendPasswordResetEmail(user.Email, token); err != nil {
+			// El error ya está logueado en emailService
+			return
+		}
+	}()
 
 	return nil
 }
