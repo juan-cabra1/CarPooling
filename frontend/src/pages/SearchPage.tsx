@@ -45,10 +45,8 @@ export default function SearchPage() {
   })
 
   useEffect(() => {
-    // Auto-search if params exist in URL
-    if (searchParams.get('origin_city') || searchParams.get('destination_city')) {
-      handleSearch()
-    }
+    // Auto-search on page load to show all trips by default
+    handleSearch()
   }, [])
 
   const handleSearch = async (page = 1) => {
@@ -81,7 +79,10 @@ export default function SearchPage() {
       if (query.date_from) params.set('date_from', query.date_from)
       if (query.min_seats) params.set('min_seats', query.min_seats.toString())
       if (query.max_price) params.set('max_price', query.max_price.toString())
-      if (query.sort_by) params.set('sort_by', query.sort_by)
+      // Only add sort_by to URL if there are other filters active
+      if (query.sort_by && (query.origin_city || query.destination_city || query.date_from || query.min_seats || query.max_price)) {
+        params.set('sort_by', query.sort_by)
+      }
       setSearchParams(params)
     } catch (err) {
       setError(getErrorMessage(err))
@@ -126,7 +127,7 @@ export default function SearchPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-8">
       <div className="container mx-auto px-4">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
@@ -302,7 +303,9 @@ export default function SearchPage() {
           {trips.length > 0 && (
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                {total} {total === 1 ? 'viaje encontrado' : 'viajes encontrados'}
+                {searchQuery.origin_city || searchQuery.destination_city
+                  ? `${total} ${total === 1 ? 'viaje encontrado' : 'viajes encontrados'}`
+                  : `Todos los viajes disponibles (${total})`}
               </h2>
 
               <div className="grid gap-6">
@@ -311,12 +314,12 @@ export default function SearchPage() {
                     <CardHeader className="bg-gradient-to-r from-primary-50 to-secondary-50">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <CardTitle className="text-2xl mb-2 flex items-center gap-3">
+                          <CardTitle className="text-2xl mb-2 flex items-center gap-3 text-gray-900">
                             <span>{trip.origin.city}</span>
                             <ArrowRight className="w-5 h-5 text-gray-400" />
                             <span>{trip.destination.city}</span>
                           </CardTitle>
-                          <CardDescription className="text-base">
+                          <CardDescription className="text-base text-gray-700">
                             {trip.origin.province} → {trip.destination.province}
                           </CardDescription>
                         </div>
@@ -391,9 +394,9 @@ export default function SearchPage() {
                       )}
                     </CardContent>
 
-                    <CardFooter className="bg-gray-50 border-t">
+                    <CardFooter className="bg-gray-50 border-t p-0">
                       <Link to={`/trips/${trip.trip_id}`} className="w-full">
-                        <Button className="w-full" size="lg">
+                        <Button className="w-full rounded-t-none" size="lg">
                           Ver Detalles y Reservar
                           <ArrowRight className="w-4 h-4 ml-2" />
                         </Button>
@@ -428,34 +431,23 @@ export default function SearchPage() {
             </div>
           )}
 
-          {/* Empty State */}
-          {!loading && trips.length === 0 && !error && (searchQuery.origin_city || searchQuery.destination_city) && (
+          {/* Empty State - No results found */}
+          {!loading && trips.length === 0 && !error && (
             <Card>
               <CardContent className="pt-6">
                 <div className="text-center py-12">
                   <Search className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                   <h2 className="text-2xl font-bold text-gray-900 mb-2">No se encontraron viajes</h2>
                   <p className="text-gray-600 mb-6">
-                    Intenta modificar tus criterios de búsqueda o explora otros destinos
+                    {searchQuery.origin_city || searchQuery.destination_city
+                      ? 'Intenta modificar tus criterios de búsqueda o explora otros destinos'
+                      : 'No hay viajes disponibles en este momento'}
                   </p>
-                  <Button onClick={handleClearFilters} variant="outline">
-                    Limpiar búsqueda
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Initial State */}
-          {!loading && trips.length === 0 && !error && !searchQuery.origin_city && !searchQuery.destination_city && (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-center py-12">
-                  <MapPin className="w-16 h-16 text-primary mx-auto mb-4" />
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Comienza tu búsqueda</h2>
-                  <p className="text-gray-600">
-                    Ingresa tu ciudad de origen y destino para encontrar viajes disponibles
-                  </p>
+                  {(searchQuery.origin_city || searchQuery.destination_city) && (
+                    <Button onClick={handleClearFilters} variant="outline">
+                      Limpiar búsqueda
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
