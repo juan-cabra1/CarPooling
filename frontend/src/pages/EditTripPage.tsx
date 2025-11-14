@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Calendar, MapPin, DollarSign, Car, Users, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,133 +14,166 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { tripsService, getErrorMessage } from '@/services'
-import type { CreateTripRequest, Location, Car as CarType, Preferences } from '@/types'
+import { useAuth } from '@/context/AuthContext'
+import type { Trip, UpdateTripRequest } from '@/types'
 
-export default function CreateTripPage() {
+export default function EditTripPage() {
+  const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const [trip, setTrip] = useState<Trip | null>(null)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const [formData, setFormData] = useState<CreateTripRequest>({
-    origin: {
-      city: '',
-      province: '',
-      address: '',
-      coordinates: { lat: 0, lng: 0 },
-    },
-    destination: {
-      city: '',
-      province: '',
-      address: '',
-      coordinates: { lat: 0, lng: 0 },
-    },
-    departure_datetime: '',
-    estimated_arrival_datetime: '',
-    price_per_seat: 0,
-    total_seats: 1,
-    car: {
-      brand: '',
-      model: '',
-      year: new Date().getFullYear(),
-      color: '',
-      plate: '',
-    },
-    preferences: {
-      pets_allowed: false,
-      smoking_allowed: false,
-      music_allowed: false,
-    },
-    description: '',
-  })
+  const [formData, setFormData] = useState<UpdateTripRequest>({})
 
-  // Coordenadas aproximadas de ciudades argentinas (en el futuro usar API de geocodificación)
-  const getCityCoordinates = (city: string): { lat: number; lng: number } => {
-    const cityCoords: Record<string, { lat: number; lng: number }> = {
-      'cordoba': { lat: -31.4201, lng: -64.1888 },
-      'buenos aires': { lat: -34.6037, lng: -58.3816 },
-      'rosario': { lat: -32.9442, lng: -60.6505 },
-      'mendoza': { lat: -32.8895, lng: -68.8458 },
-      'tucuman': { lat: -26.8083, lng: -65.2176 },
-      'salta': { lat: -24.7859, lng: -65.4117 },
-      'santa fe': { lat: -31.6333, lng: -60.7000 },
-      'mar del plata': { lat: -38.0055, lng: -57.5426 },
-      'catamarca': { lat: -28.4696, lng: -65.7795 },
-      'villa carlos paz': { lat: -31.4204, lng: -64.4975 },
+  useEffect(() => {
+    if (id) {
+      fetchTrip()
     }
+  }, [id])
 
-    const normalizedCity = city.toLowerCase().trim()
-    return cityCoords[normalizedCity] || { lat: -34.6037, lng: -58.3816 } // Default: Buenos Aires
+  const fetchTrip = async () => {
+    if (!id) return
+
+    try {
+      setLoading(true)
+      setError('')
+      const data = await tripsService.getTripById(id)
+
+      // Verificar que el usuario sea el propietario
+      if (user && data.driver_id !== user.id) {
+        setError('No tienes permiso para editar este viaje')
+        return
+      }
+
+      // Verificar que no tenga reservas
+      if (data.reserved_seats > 0) {
+        setError('No puedes editar un viaje que tiene reservas activas')
+        return
+      }
+
+      setTrip(data)
+
+      // Inicializar el formulario con los datos del viaje
+      setFormData({
+        origin: data.origin,
+        destination: data.destination,
+        departure_datetime: formatDateForInput(data.departure_datetime),
+        estimated_arrival_datetime: formatDateForInput(data.estimated_arrival_datetime),
+        price_per_seat: data.price_per_seat,
+        total_seats: data.total_seats,
+        car: data.car,
+        preferences: data.preferences,
+        description: data.description,
+      })
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatDateForInput = (dateString: string) => {
+    const date = new Date(dateString)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}`
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!id || !trip) return
 
     try {
       setSaving(true)
       setError('')
 
-      // Validación de fechas
-      const departureDate = new Date(formData.departure_datetime)
-      const arrivalDate = new Date(formData.estimated_arrival_datetime)
-      const now = new Date()
-
-      if (departureDate < now) {
-        setError('La fecha de salida debe ser en el futuro')
-        return
-      }
-
-      if (arrivalDate <= departureDate) {
-        setError('La fecha de llegada debe ser posterior a la fecha de salida')
-        return
-      }
-
-      // Obtener coordenadas basadas en las ciudades
-      const originCoords = getCityCoordinates(formData.origin.city)
-      const destCoords = getCityCoordinates(formData.destination.city)
-
-      // Convertir fechas a ISO 8601 y agregar coordenadas
-      const createData: CreateTripRequest = {
+      // Convertir fechas a ISO 8601
+      const updateData: UpdateTripRequest = {
         ...formData,
-        origin: {
-          ...formData.origin,
-          coordinates: originCoords,
-        },
-        destination: {
-          ...formData.destination,
-          coordinates: destCoords,
-        },
-        departure_datetime: departureDate.toISOString(),
-        estimated_arrival_datetime: arrivalDate.toISOString(),
+        departure_datetime: formData.departure_datetime
+          ? new Date(formData.departure_datetime).toISOString()
+          : undefined,
+        estimated_arrival_datetime: formData.estimated_arrival_datetime
+          ? new Date(formData.estimated_arrival_datetime).toISOString()
+          : undefined,
       }
 
-      const newTrip = await tripsService.createTrip(createData)
-      navigate(`/trips/${newTrip.id}`, {
-        state: { message: 'Viaje publicado exitosamente' }
+      await tripsService.updateTrip(id, updateData)
+      navigate(`/trips/${id}`, {
+        state: { message: 'Viaje actualizado exitosamente' }
       })
     } catch (err) {
       setError(getErrorMessage(err))
-      window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally {
       setSaving(false)
     }
   }
 
-  const handleChange = (field: keyof CreateTripRequest, value: any) => {
+  const handleChange = (field: string, value: any) => {
     setFormData(prev => ({
       ...prev,
       [field]: value,
     }))
   }
 
-  const handleNestedChange = (parent: keyof CreateTripRequest, field: string, value: any) => {
+  const handleNestedChange = (parent: string, field: string, value: any) => {
     setFormData(prev => ({
       ...prev,
       [parent]: {
-        ...(prev[parent] as any),
+        ...(prev[parent as keyof UpdateTripRequest] as any),
         [field]: value,
       },
     }))
   }
+
+  if (loading) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-8">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-center py-16">
+              <div className="text-center">
+                <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-gray-600">Cargando viaje...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error && !trip) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-8">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-8">
+                  <AlertCircle className="w-16 h-16 text-destructive mx-auto mb-4" />
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">No se puede editar el viaje</h2>
+                  <p className="text-gray-600 mb-6">{error}</p>
+                  <Button onClick={() => navigate(-1)}>
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Volver
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!trip || !formData.origin) return null
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-8">
@@ -161,9 +194,9 @@ export default function CreateTripPage() {
           <form onSubmit={handleSubmit}>
             <Card>
               <CardHeader>
-                <CardTitle className="text-3xl">Publicar Nuevo Viaje</CardTitle>
+                <CardTitle className="text-3xl">Editar Viaje</CardTitle>
                 <CardDescription>
-                  Completa los detalles de tu viaje para que otros puedan unirse
+                  Actualiza los detalles de tu viaje
                 </CardDescription>
               </CardHeader>
 
@@ -172,10 +205,7 @@ export default function CreateTripPage() {
                 {error && (
                   <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-destructive">Error al crear viaje</p>
-                      <p className="text-sm text-destructive/80">{error}</p>
-                    </div>
+                    <p className="text-sm text-destructive">{error}</p>
                   </div>
                 )}
 
@@ -192,40 +222,31 @@ export default function CreateTripPage() {
                       <h4 className="font-semibold text-primary">Origen</h4>
 
                       <div className="space-y-2">
-                        <Label htmlFor="origin-city">
-                          Ciudad <span className="text-destructive">*</span>
-                        </Label>
+                        <Label htmlFor="origin-city">Ciudad</Label>
                         <Input
                           id="origin-city"
-                          value={formData.origin.city}
+                          value={formData.origin?.city || ''}
                           onChange={(e) => handleNestedChange('origin', 'city', e.target.value)}
-                          placeholder="Ej: Córdoba"
                           required
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="origin-province">
-                          Provincia <span className="text-destructive">*</span>
-                        </Label>
+                        <Label htmlFor="origin-province">Provincia</Label>
                         <Input
                           id="origin-province"
-                          value={formData.origin.province}
+                          value={formData.origin?.province || ''}
                           onChange={(e) => handleNestedChange('origin', 'province', e.target.value)}
-                          placeholder="Ej: Córdoba"
                           required
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="origin-address">
-                          Dirección <span className="text-destructive">*</span>
-                        </Label>
+                        <Label htmlFor="origin-address">Dirección</Label>
                         <Input
                           id="origin-address"
-                          value={formData.origin.address}
+                          value={formData.origin?.address || ''}
                           onChange={(e) => handleNestedChange('origin', 'address', e.target.value)}
-                          placeholder="Ej: Av. Colón 1234"
                           required
                         />
                       </div>
@@ -236,40 +257,31 @@ export default function CreateTripPage() {
                       <h4 className="font-semibold text-secondary">Destino</h4>
 
                       <div className="space-y-2">
-                        <Label htmlFor="destination-city">
-                          Ciudad <span className="text-destructive">*</span>
-                        </Label>
+                        <Label htmlFor="destination-city">Ciudad</Label>
                         <Input
                           id="destination-city"
-                          value={formData.destination.city}
+                          value={formData.destination?.city || ''}
                           onChange={(e) => handleNestedChange('destination', 'city', e.target.value)}
-                          placeholder="Ej: Buenos Aires"
                           required
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="destination-province">
-                          Provincia <span className="text-destructive">*</span>
-                        </Label>
+                        <Label htmlFor="destination-province">Provincia</Label>
                         <Input
                           id="destination-province"
-                          value={formData.destination.province}
+                          value={formData.destination?.province || ''}
                           onChange={(e) => handleNestedChange('destination', 'province', e.target.value)}
-                          placeholder="Ej: Buenos Aires"
                           required
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="destination-address">
-                          Dirección <span className="text-destructive">*</span>
-                        </Label>
+                        <Label htmlFor="destination-address">Dirección</Label>
                         <Input
                           id="destination-address"
-                          value={formData.destination.address}
+                          value={formData.destination?.address || ''}
                           onChange={(e) => handleNestedChange('destination', 'address', e.target.value)}
-                          placeholder="Ej: Av. 9 de Julio 1000"
                           required
                         />
                       </div>
@@ -286,29 +298,23 @@ export default function CreateTripPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="departure">
-                        Fecha y hora de salida <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="departure">Fecha y hora de salida</Label>
                       <Input
                         id="departure"
                         type="datetime-local"
-                        value={formData.departure_datetime}
+                        value={formData.departure_datetime || ''}
                         onChange={(e) => handleChange('departure_datetime', e.target.value)}
-                        min={new Date().toISOString().slice(0, 16)}
                         required
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="arrival">
-                        Fecha y hora estimada de llegada <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="arrival">Fecha y hora estimada de llegada</Label>
                       <Input
                         id="arrival"
                         type="datetime-local"
-                        value={formData.estimated_arrival_datetime}
+                        value={formData.estimated_arrival_datetime || ''}
                         onChange={(e) => handleChange('estimated_arrival_datetime', e.target.value)}
-                        min={formData.departure_datetime || new Date().toISOString().slice(0, 16)}
                         required
                       />
                     </div>
@@ -324,40 +330,29 @@ export default function CreateTripPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="price">
-                        Precio por asiento (ARS) <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="price">Precio por asiento (ARS)</Label>
                       <Input
                         id="price"
                         type="number"
                         min="0"
                         step="100"
-                        value={formData.price_per_seat}
+                        value={formData.price_per_seat || ''}
                         onChange={(e) => handleChange('price_per_seat', parseFloat(e.target.value))}
-                        placeholder="Ej: 5000"
                         required
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Precio que cada pasajero pagará por su asiento
-                      </p>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="seats">
-                        Total de asientos disponibles <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="seats">Total de asientos disponibles</Label>
                       <Input
                         id="seats"
                         type="number"
                         min="1"
                         max="8"
-                        value={formData.total_seats}
+                        value={formData.total_seats || ''}
                         onChange={(e) => handleChange('total_seats', parseInt(e.target.value))}
                         required
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Cantidad de asientos que ofreces (máximo 8)
-                      </p>
                     </div>
                   </div>
                 </div>
@@ -371,69 +366,54 @@ export default function CreateTripPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="car-brand">
-                        Marca <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="car-brand">Marca</Label>
                       <Input
                         id="car-brand"
-                        value={formData.car.brand}
+                        value={formData.car?.brand || ''}
                         onChange={(e) => handleNestedChange('car', 'brand', e.target.value)}
-                        placeholder="Ej: Toyota"
                         required
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="car-model">
-                        Modelo <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="car-model">Modelo</Label>
                       <Input
                         id="car-model"
-                        value={formData.car.model}
+                        value={formData.car?.model || ''}
                         onChange={(e) => handleNestedChange('car', 'model', e.target.value)}
-                        placeholder="Ej: Corolla"
                         required
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="car-year">
-                        Año <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="car-year">Año</Label>
                       <Input
                         id="car-year"
                         type="number"
                         min="1990"
                         max={new Date().getFullYear() + 1}
-                        value={formData.car.year}
+                        value={formData.car?.year || ''}
                         onChange={(e) => handleNestedChange('car', 'year', parseInt(e.target.value))}
                         required
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="car-color">
-                        Color <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="car-color">Color</Label>
                       <Input
                         id="car-color"
-                        value={formData.car.color}
+                        value={formData.car?.color || ''}
                         onChange={(e) => handleNestedChange('car', 'color', e.target.value)}
-                        placeholder="Ej: Blanco"
                         required
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="car-plate">
-                        Patente <span className="text-destructive">*</span>
-                      </Label>
+                      <Label htmlFor="car-plate">Patente</Label>
                       <Input
                         id="car-plate"
-                        value={formData.car.plate}
+                        value={formData.car?.plate || ''}
                         onChange={(e) => handleNestedChange('car', 'plate', e.target.value.toUpperCase())}
-                        placeholder="Ej: ABC123"
-                        maxLength={7}
                         required
                       />
                     </div>
@@ -446,46 +426,43 @@ export default function CreateTripPage() {
                     <Users className="w-5 h-5 text-primary" />
                     Preferencias del Viaje
                   </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Selecciona qué está permitido durante el viaje
-                  </p>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center space-x-2">
                       <input
                         type="checkbox"
                         id="pets"
-                        checked={formData.preferences.pets_allowed}
+                        checked={formData.preferences?.pets_allowed || false}
                         onChange={(e) => handleNestedChange('preferences', 'pets_allowed', e.target.checked)}
                         className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
                       />
-                      <Label htmlFor="pets" className="cursor-pointer flex-1">
+                      <Label htmlFor="pets" className="cursor-pointer">
                         🐕 Permitir mascotas
                       </Label>
                     </div>
 
-                    <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center space-x-2">
                       <input
                         type="checkbox"
                         id="smoking"
-                        checked={formData.preferences.smoking_allowed}
+                        checked={formData.preferences?.smoking_allowed || false}
                         onChange={(e) => handleNestedChange('preferences', 'smoking_allowed', e.target.checked)}
                         className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
                       />
-                      <Label htmlFor="smoking" className="cursor-pointer flex-1">
+                      <Label htmlFor="smoking" className="cursor-pointer">
                         🚬 Permitir fumar
                       </Label>
                     </div>
 
-                    <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center space-x-2">
                       <input
                         type="checkbox"
                         id="music"
-                        checked={formData.preferences.music_allowed}
+                        checked={formData.preferences?.music_allowed || false}
                         onChange={(e) => handleNestedChange('preferences', 'music_allowed', e.target.checked)}
                         className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
                       />
-                      <Label htmlFor="music" className="cursor-pointer flex-1">
+                      <Label htmlFor="music" className="cursor-pointer">
                         🎵 Permitir música
                       </Label>
                     </div>
@@ -497,24 +474,20 @@ export default function CreateTripPage() {
                   <Label htmlFor="description">Descripción del viaje (opcional)</Label>
                   <Textarea
                     id="description"
-                    placeholder="Cuéntales a los pasajeros más detalles sobre el viaje, puntos de encuentro, paradas, etc."
-                    value={formData.description}
+                    placeholder="Cuéntales a los pasajeros más detalles sobre el viaje..."
+                    value={formData.description || ''}
                     onChange={(e) => handleChange('description', e.target.value)}
                     rows={4}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Incluye información útil como puntos de encuentro, paradas intermedias, forma de pago, etc.
-                  </p>
                 </div>
               </CardContent>
 
-              <CardFooter className="flex gap-3 bg-gray-50">
+              <CardFooter className="flex gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => navigate(-1)}
                   className="flex-1"
-                  disabled={saving}
                 >
                   Cancelar
                 </Button>
@@ -522,18 +495,14 @@ export default function CreateTripPage() {
                   type="submit"
                   disabled={saving}
                   className="flex-1"
-                  size="lg"
                 >
                   {saving ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Publicando...
+                      Guardando...
                     </>
                   ) : (
-                    <>
-                      <Car className="w-5 h-5 mr-2" />
-                      Publicar Viaje
-                    </>
+                    'Guardar Cambios'
                   )}
                 </Button>
               </CardFooter>
