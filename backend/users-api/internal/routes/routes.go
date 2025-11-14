@@ -3,6 +3,7 @@ package routes
 import (
 	"users-api/internal/controller"
 	"users-api/internal/middleware"
+	"users-api/internal/repository"
 	"users-api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +16,7 @@ func SetupRoutes(
 	userController controller.UserController,
 	ratingController controller.RatingController,
 	authService service.AuthService,
+	userRepo repository.UserRepository,
 ) {
 	// Middleware globales
 	router.Use(middleware.ErrorHandler())
@@ -40,10 +42,11 @@ func SetupRoutes(
 	router.POST("/forgot-password", authController.RequestPasswordReset)
 	router.POST("/reset-password", authController.ResetPassword)
 
-	// ==================== RUTAS PROTEGIDAS (requieren JWT) ====================
+	// ==================== RUTAS PROTEGIDAS (requieren JWT + Email verificado) ====================
 
 	protected := router.Group("/")
 	protected.Use(middleware.AuthMiddleware(authService))
+	protected.Use(middleware.RequireVerifiedEmail(userRepo))
 	{
 		// Perfil de usuario
 		protected.GET("/users/me", userController.GetMe)
