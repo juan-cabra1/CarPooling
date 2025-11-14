@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net/smtp"
 	"users-api/internal/config"
 )
@@ -70,9 +69,6 @@ func (s *emailService) sendEmail(to, subject, body string) error {
 	smtpHost := s.config.SMTPHost
 	smtpPort := s.config.SMTPPort
 
-	// Log de intento de envío
-	log.Printf("[EMAIL] Intentando enviar email a %s (Subject: %s)", to, subject)
-
 	// Mensaje
 	msg := []byte(fmt.Sprintf("From: %s\r\n"+
 		"To: %s\r\n"+
@@ -88,12 +84,5 @@ func (s *emailService) sendEmail(to, subject, body string) error {
 	// Enviar email
 	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
 	err := smtp.SendMail(addr, auth, from, []string{to}, msg)
-
-	if err != nil {
-		log.Printf("[EMAIL ERROR] Fallo al enviar email a %s: %v", to, err)
-		return err
-	}
-
-	log.Printf("[EMAIL SUCCESS] Email enviado exitosamente a %s", to)
-	return nil
+	return err
 }
