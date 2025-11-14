@@ -70,7 +70,7 @@ func NewSearchService(
 		solrClient:       solrClient,
 		tripsClient:      tripsClient,
 		usersClient:      usersClient,
-		cacheTTL:         15 * time.Minute, // Default cache TTL
+		cacheTTL:         10 * time.Minute, // Default cache TTL
 	}
 }
 

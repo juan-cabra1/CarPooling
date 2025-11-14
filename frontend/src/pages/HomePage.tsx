@@ -57,8 +57,7 @@ export default function HomePage() {
               <Link to="/search" className="w-full sm:w-auto">
                 <Button
                   size="lg"
-                  variant="outline"
-                  className="w-full sm:w-auto text-lg px-8 py-6 border-2 border-primary bg-white hover:bg-primary hover:text-white transition-all duration-300"
+                  className="w-full sm:w-auto text-lg px-8 py-6 bg-gradient-to-r from-primary to-secondary hover:from-primary-600 hover:to-secondary-600 text-white shadow-lg hover:shadow-xl transition-all duration-300"
                 >
                   <Search className="w-5 h-5 mr-2" />
                   Buscar Viajes
@@ -160,7 +159,7 @@ export default function HomePage() {
       </section>
 
       {/* Features Section */}
-      <section className="bg-white/30 backdrop-blur-sm py-16">
+      <section className="py-16">
         <div className="container mx-auto px-4">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">
