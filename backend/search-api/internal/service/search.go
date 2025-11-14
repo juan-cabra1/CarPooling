@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"search-api/internal/repository"
 
 	"github.com/rs/zerolog/log"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -534,13 +536,32 @@ func (s *searchService) searchWithSolr(ctx context.Context, query *domain.Search
 	return trips, int64(total), nil
 }
 
-// searchWithMongoDB performs search using MongoDB
+// searchWithMongoDB performs search using MongoDB with two-phase strategy:
+// 1. Try exact match first
+// 2. If no results and city filters are present, try partial match
 func (s *searchService) searchWithMongoDB(ctx context.Context, query *domain.SearchQuery) ([]*domain.SearchTrip, int64, error) {
-	// Build MongoDB filters
-	filters := s.buildMongoFilters(query)
+	// Phase 1: Build MongoDB filters with exact match
+	filters := s.buildMongoFilters(query, false)
 
-	// Execute MongoDB search
+	// Execute MongoDB search with exact match
 	trips, total, err := s.tripRepo.Search(ctx, filters, query.Page, query.Limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// If we have results or no city filters were provided, return the results
+	if total > 0 || (query.OriginCity == "" && query.DestinationCity == "") {
+		return trips, total, nil
+	}
+
+	// Phase 2: No results with exact match, try partial match on cities
+	log.Debug().
+		Str("origin_city", query.OriginCity).
+		Str("destination_city", query.DestinationCity).
+		Msg("No exact match found, trying partial match on city names")
+
+	filtersPartial := s.buildMongoFilters(query, true)
+	trips, total, err = s.tripRepo.Search(ctx, filtersPartial, query.Page, query.Limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -549,19 +570,38 @@ func (s *searchService) searchWithMongoDB(ctx context.Context, query *domain.Sea
 }
 
 // buildMongoFilters converts SearchQuery to MongoDB filters
-func (s *searchService) buildMongoFilters(query *domain.SearchQuery) map[string]interface{} {
+// usePartialMatch: if true, city filters will use regex for prefix matching (case-insensitive)
+func (s *searchService) buildMongoFilters(query *domain.SearchQuery, usePartialMatch bool) map[string]interface{} {
 	filters := make(map[string]interface{})
 
 	// Always filter by published status and available seats
 	filters["status"] = "published"
 	filters["available_seats"] = map[string]interface{}{"$gte": 1}
 
-	// City filters
+	// City filters - support both exact and partial matching
 	if query.OriginCity != "" {
-		filters["origin.city"] = query.OriginCity
+		if usePartialMatch {
+			// Partial match: case-insensitive prefix search
+			filters["origin.city"] = bson.M{
+				"$regex":   "^" + regexp.QuoteMeta(query.OriginCity),
+				"$options": "i",
+			}
+		} else {
+			// Exact match
+			filters["origin.city"] = query.OriginCity
+		}
 	}
 	if query.DestinationCity != "" {
-		filters["destination.city"] = query.DestinationCity
+		if usePartialMatch {
+			// Partial match: case-insensitive prefix search
+			filters["destination.city"] = bson.M{
+				"$regex":   "^" + regexp.QuoteMeta(query.DestinationCity),
+				"$options": "i",
+			}
+		} else {
+			// Exact match
+			filters["destination.city"] = query.DestinationCity
+		}
 	}
 
 	// Seats filter

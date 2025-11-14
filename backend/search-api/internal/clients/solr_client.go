@@ -154,7 +154,9 @@ func (s *SolrClient) Index(ctx context.Context, trip *domain.SearchTrip) error {
 	return nil
 }
 
-// Search performs a search query in Solr with filters
+// Search performs a search query in Solr with filters, using two-phase strategy:
+// 1. Try exact match first
+// 2. If no results and city filters are present, try partial match
 func (s *SolrClient) Search(ctx context.Context, query string, filters map[string]interface{}, page int, limit int) ([]map[string]interface{}, int, error) {
 	if page < 1 {
 		page = 1
@@ -163,6 +165,38 @@ func (s *SolrClient) Search(ctx context.Context, query string, filters map[strin
 		limit = 10
 	}
 
+	// Check if we have city filters
+	hasCityFilters := false
+	if originCity, ok := filters["origin_city"].(string); ok && originCity != "" {
+		hasCityFilters = true
+	}
+	if destCity, ok := filters["destination_city"].(string); ok && destCity != "" {
+		hasCityFilters = true
+	}
+
+	// Phase 1: Try exact match first
+	docs, total, err := s.searchWithFilters(ctx, query, filters, page, limit, false)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// If we have results or no city filters, return immediately
+	if total > 0 || !hasCityFilters {
+		return docs, total, nil
+	}
+
+	// Phase 2: No results with exact match, try partial match on cities
+	log.Debug().Msg("No exact match found in Solr, trying partial match on city names")
+	docs, total, err = s.searchWithFilters(ctx, query, filters, page, limit, true)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return docs, total, nil
+}
+
+// searchWithFilters performs the actual Solr search with specified match type
+func (s *SolrClient) searchWithFilters(ctx context.Context, query string, filters map[string]interface{}, page int, limit int, usePartialMatch bool) ([]map[string]interface{}, int, error) {
 	// Calculate offset
 	start := (page - 1) * limit
 
@@ -182,7 +216,7 @@ func (s *SolrClient) Search(ctx context.Context, query string, filters map[strin
 
 	// Add filters
 	if len(filters) > 0 {
-		filterQueries := s.buildFilterQueries(filters)
+		filterQueries := s.buildFilterQueries(filters, usePartialMatch)
 		for _, fq := range filterQueries {
 			params.Add("fq", fq)
 		}
@@ -222,6 +256,7 @@ func (s *SolrClient) Search(ctx context.Context, query string, filters map[strin
 	log.Debug().
 		Int("num_found", solrResp.Response.NumFound).
 		Int("returned", len(docs)).
+		Bool("partial_match", usePartialMatch).
 		Msg("Solr search completed successfully")
 
 	return docs, solrResp.Response.NumFound, nil
@@ -417,15 +452,22 @@ func (s *SolrClient) solrDocumentToMap(doc SolrDocument) map[string]interface{} 
 }
 
 // Helper: buildFilterQueries converts filter map to Solr filter queries
-func (s *SolrClient) buildFilterQueries(filters map[string]interface{}) []string {
+// usePartialMatch: if true, city fields will use wildcard matching instead of exact match
+func (s *SolrClient) buildFilterQueries(filters map[string]interface{}, usePartialMatch bool) []string {
 	var fqs []string
 
 	for key, value := range filters {
 		switch v := value.(type) {
 		case string:
 			if v != "" {
-				// Wrap string values in quotes to handle spaces and special characters
-				fqs = append(fqs, fmt.Sprintf(`%s:"%s"`, key, v))
+				// For city fields, support partial matching with wildcard
+				if usePartialMatch && (key == "origin_city" || key == "destination_city") {
+					// Use wildcard for prefix search (case-insensitive by default in Solr)
+					fqs = append(fqs, fmt.Sprintf(`%s:%s*`, key, strings.ToLower(v)))
+				} else {
+					// Wrap string values in quotes to handle spaces and special characters
+					fqs = append(fqs, fmt.Sprintf(`%s:"%s"`, key, v))
+				}
 			}
 		case int:
 			fqs = append(fqs, fmt.Sprintf("%s:%d", key, v))
