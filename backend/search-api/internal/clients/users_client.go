@@ -50,10 +50,10 @@ func NewUsersClient(config HTTPClientConfig) UsersClient {
 }
 
 // GetUser fetches user details from users-api
-// Endpoint: GET /users/:id
+// Endpoint: GET /internal/users/:id (internal route, no auth required)
 // Returns: User DTO with profile and rating information
 func (c *usersHTTPClient) GetUser(ctx context.Context, userID int64) (*domain.User, error) {
-	url := fmt.Sprintf("%s/users/%d", c.baseURL, userID)
+	url := fmt.Sprintf("%s/internal/users/%d", c.baseURL, userID)
 
 	log.Debug().
 		Int64("user_id", userID).

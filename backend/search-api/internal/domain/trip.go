@@ -14,9 +14,9 @@ type Trip struct {
 	// Driver and ownership
 	DriverID int64 `json:"driver_id" bson:"driver_id"`
 
-	// Location information
-	Origin      Location `json:"origin" bson:"origin"`
-	Destination Location `json:"destination" bson:"destination"`
+	// Location information (from trips-api with simple lat/lng format)
+	Origin      TripLocation `json:"origin" bson:"origin"`
+	Destination TripLocation `json:"destination" bson:"destination"`
 
 	// Trip timing
 	DepartureDatetime        time.Time `json:"departure_datetime" bson:"departure_datetime"`
@@ -49,15 +49,40 @@ type Trip struct {
 	UpdatedAt time.Time `json:"updated_at" bson:"updated_at"`
 }
 
+// TripLocation represents location data from trips-api (with simple lat/lng coordinates)
+type TripLocation struct {
+	City        string            `json:"city"`
+	Province    string            `json:"province"`
+	Address     string            `json:"address"`
+	Coordinates SimpleCoordinates `json:"coordinates"`
+}
+
+// SimpleCoordinates represents simple lat/lng coordinates from trips-api
+type SimpleCoordinates struct {
+	Lat float64 `json:"lat"`
+	Lng float64 `json:"lng"`
+}
+
+// ToLocation converts TripLocation (from trips-api) to Location (for search-api storage)
+func (tl *TripLocation) ToLocation() Location {
+	return Location{
+		City:        tl.City,
+		Province:    tl.Province,
+		Address:     tl.Address,
+		Coordinates: NewGeoJSONPoint(tl.Coordinates.Lat, tl.Coordinates.Lng),
+	}
+}
+
 // ToSearchTrip converts Trip DTO to SearchTrip with driver information
 // Driver info must be fetched separately from users-api
+// This method converts simple lat/lng coordinates to GeoJSON format required by MongoDB
 func (t *Trip) ToSearchTrip(driver Driver) *SearchTrip {
 	return &SearchTrip{
 		TripID:                   t.ID.Hex(),
 		DriverID:                 t.DriverID,
 		Driver:                   driver,
-		Origin:                   t.Origin,
-		Destination:              t.Destination,
+		Origin:                   t.Origin.ToLocation(),
+		Destination:              t.Destination.ToLocation(),
 		DepartureDatetime:        t.DepartureDatetime,
 		EstimatedArrivalDatetime: t.EstimatedArrivalDatetime,
 		PricePerSeat:             t.PricePerSeat,

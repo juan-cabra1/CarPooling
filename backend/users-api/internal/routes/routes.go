@@ -65,6 +65,9 @@ func SetupRoutes(
 
 	internal := router.Group("/internal")
 	{
+		// Obtener usuario (llamado desde search-api y otros servicios)
+		internal.GET("/users/:id", userController.GetUserByID)
+
 		// Crear calificación (llamado desde trips-api)
 		internal.POST("/ratings", ratingController.CreateRating)
 	}
