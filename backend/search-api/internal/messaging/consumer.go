@@ -210,6 +210,8 @@ func (c *Consumer) handleMessage(ctx context.Context, msg amqp091.Delivery) {
 		err = c.handleTripUpdated(ctx, msg.Body)
 	case "trip.cancelled":
 		err = c.handleTripCancelled(ctx, msg.Body)
+	case "trip.deleted":
+		err = c.handleTripDeleted(ctx, msg.Body)
 	default:
 		log.Warn().
 			Str("event_type", baseEvent.EventType).
@@ -275,6 +277,16 @@ func (c *Consumer) handleTripCancelled(ctx context.Context, body []byte) error {
 	}
 
 	return c.eventService.HandleTripCancelled(ctx, event.EventID, event.TripID, event.CancellationReason)
+}
+
+// handleTripDeleted processes trip.deleted events
+func (c *Consumer) handleTripDeleted(ctx context.Context, body []byte) error {
+	var event TripDeletedEvent
+	if err := json.Unmarshal(body, &event); err != nil {
+		return fmt.Errorf("unmarshal trip.deleted failed: %w", err)
+	}
+
+	return c.eventService.HandleTripDeleted(ctx, event.EventID, event.TripID, event.Reason)
 }
 
 // reconnect handles reconnection with exponential backoff

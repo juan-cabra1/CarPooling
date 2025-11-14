@@ -20,6 +20,7 @@ const (
 	routingKeyTripCreated          = "trip.created"
 	routingKeyTripUpdated          = "trip.updated"
 	routingKeyTripCancelled        = "trip.cancelled"
+	routingKeyTripDeleted          = "trip.deleted"
 	routingKeyReservationFailed    = "reservation.failed"
 	routingKeyReservationConfirmed = "reservation.confirmed"
 
@@ -32,6 +33,7 @@ type Publisher interface {
 	PublishTripCreated(ctx context.Context, trip *domain.Trip)
 	PublishTripUpdated(ctx context.Context, trip *domain.Trip)
 	PublishTripCancelled(ctx context.Context, trip *domain.Trip, cancelledBy int64, reason string)
+	PublishTripDeleted(ctx context.Context, trip *domain.Trip, deletedBy int64, reason string)
 	PublishReservationFailure(ctx context.Context, reservationID, tripID, reason string, availableSeats int)
 	PublishReservationConfirmation(ctx context.Context, reservationID, tripID string, passengerID, driverID int64, seatsReserved int, totalPrice float64, availableSeats int)
 	Close() error
@@ -141,6 +143,28 @@ func (p *publisher) PublishTripCancelled(ctx context.Context, trip *domain.Trip,
 	}
 
 	p.publish(ctx, routingKeyTripCancelled, event)
+}
+
+// PublishTripDeleted publica un evento trip.deleted cuando un viaje es eliminado físicamente
+func (p *publisher) PublishTripDeleted(ctx context.Context, trip *domain.Trip, deletedBy int64, reason string) {
+	event := TripDeletedEvent{
+		TripEvent: TripEvent{
+			EventID:        uuid.New().String(),
+			EventType:      routingKeyTripDeleted,
+			TripID:         trip.ID.Hex(),
+			DriverID:       trip.DriverID,
+			Status:         trip.Status,
+			AvailableSeats: trip.AvailableSeats,
+			ReservedSeats:  trip.ReservedSeats,
+			Timestamp:      time.Now(),
+			SourceService:  sourceService,
+			CorrelationID:  getCorrelationID(ctx),
+		},
+		DeletedBy: deletedBy,
+		Reason:    reason,
+	}
+
+	p.publish(ctx, routingKeyTripDeleted, event)
 }
 
 // PublishReservationFailure publica un evento de compensación cuando falla una reserva

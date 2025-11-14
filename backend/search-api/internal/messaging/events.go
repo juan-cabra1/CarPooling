@@ -35,3 +35,13 @@ type TripCancelledEvent struct {
 	CancellationReason string    `json:"cancellation_reason"`
 	Timestamp          time.Time `json:"timestamp"`
 }
+
+// TripDeletedEvent represents a trip deletion event from trips-api
+type TripDeletedEvent struct {
+	EventID   string    `json:"event_id"`
+	EventType string    `json:"event_type"`
+	TripID    string    `json:"trip_id"`
+	DeletedBy int64     `json:"deleted_by"`
+	Reason    string    `json:"reason"`
+	Timestamp time.Time `json:"timestamp"`
+}

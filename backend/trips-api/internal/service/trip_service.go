@@ -292,6 +292,10 @@ func (s *tripService) UpdateTrip(ctx context.Context, tripID string, userID int6
 //
 // Validaciones:
 // - Solo el dueño puede eliminar (userID == driver_id)
+//
+// Acciones:
+// - Publica evento trip.deleted a RabbitMQ para sincronizar con search-api
+// - Elimina el viaje de MongoDB
 func (s *tripService) DeleteTrip(ctx context.Context, tripID string, userID int64) error {
 	// Obtener el trip para verificar ownership
 	trip, err := s.tripRepo.FindByID(ctx, tripID)
@@ -303,6 +307,10 @@ func (s *tripService) DeleteTrip(ctx context.Context, tripID string, userID int6
 	if trip.DriverID != userID {
 		return domain.ErrUnauthorized
 	}
+
+	// Publicar evento trip.deleted ANTES de eliminar (fire-and-forget)
+	// Esto permite que search-api sincronice la eliminación en su índice
+	s.publisher.PublishTripDeleted(ctx, trip, userID, "Deleted by owner")
 
 	// Eliminar del repositorio
 	if err := s.tripRepo.Delete(ctx, tripID); err != nil {
