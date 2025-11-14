@@ -9,15 +9,14 @@ import (
 	"time"
 
 	"search-api/internal/cache"
+	"search-api/internal/clients"
 	"search-api/internal/config"
-	"search-api/internal/controller"
+	"search-api/internal/controllers"
 	"search-api/internal/database"
-	httpClient "search-api/internal/http"
 	"search-api/internal/messaging"
 	"search-api/internal/repository"
 	"search-api/internal/routes"
 	"search-api/internal/service"
-	"search-api/internal/solr"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/gin-gonic/gin"
@@ -52,19 +51,16 @@ func main() {
 	}
 	log.Info().Msg("MongoDB indexes created successfully")
 
-	// Connect to Apache Solr
-	solrClient, err := solr.NewClient(cfg.Solr.URL, cfg.Solr.Core)
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to connect to Solr (will fallback to MongoDB)")
+	// Connect to Apache Solr with simple client
+	solrClient := clients.NewSolrClient(cfg.Solr.URL, cfg.Solr.Core)
+
+	// Test Solr connection
+	ctx := context.Background()
+	if err := solrClient.Ping(ctx); err != nil {
+		log.Warn().Err(err).Msg("Solr ping failed (will fallback to MongoDB)")
 		solrClient = nil // Continue without Solr - graceful degradation
 	} else {
-		// Test Solr connection
-		if err := solrClient.Ping(); err != nil {
-			log.Warn().Err(err).Msg("Solr ping failed (will fallback to MongoDB)")
-			solrClient = nil
-		} else {
-			log.Info().Msg("Connected to Apache Solr successfully")
-		}
+		log.Info().Msg("Connected to Apache Solr successfully")
 	}
 
 	// Connect to Memcached
@@ -101,19 +97,19 @@ func main() {
 	log.Info().Msg("Repositories initialized successfully")
 
 	// Initialize HTTP clients
-	tripsClient := httpClient.NewTripsClient(httpClient.HTTPClientConfig{
+	tripsClient := clients.NewTripsClient(clients.HTTPClientConfig{
 		BaseURL:        cfg.HTTP.TripsAPIURL,
 		Timeout:        time.Duration(cfg.HTTP.Timeout) * time.Second,
 		MaxRetries:     cfg.HTTP.MaxRetries,
 		RetryWaitTime:  1 * time.Second,
-		CircuitBreaker: httpClient.NewCircuitBreaker(5, 30*time.Second),
+		CircuitBreaker: clients.NewCircuitBreaker(5, 30*time.Second),
 	})
-	usersClient := httpClient.NewUsersClient(httpClient.HTTPClientConfig{
+	usersClient := clients.NewUsersClient(clients.HTTPClientConfig{
 		BaseURL:        cfg.HTTP.UsersAPIURL,
 		Timeout:        time.Duration(cfg.HTTP.Timeout) * time.Second,
 		MaxRetries:     cfg.HTTP.MaxRetries,
 		RetryWaitTime:  1 * time.Second,
-		CircuitBreaker: httpClient.NewCircuitBreaker(5, 30*time.Second),
+		CircuitBreaker: clients.NewCircuitBreaker(5, 30*time.Second),
 	})
 	log.Info().Msg("HTTP clients initialized successfully")
 
@@ -153,13 +149,13 @@ func main() {
 	log.Info().Msg("RabbitMQ consumer started in background")
 
 	// Initialize controllers
-	healthController := controller.NewHealthController(
+	healthController := controllers.NewHealthController(
 		mongoClient,
 		solrClient,
 		memcachedClient,
 		cfg,
 	)
-	searchController := controller.NewSearchController(searchService)
+	searchController := controllers.NewSearchController(searchService)
 	log.Info().Msg("Controllers initialized successfully")
 
 	// Setup Gin router

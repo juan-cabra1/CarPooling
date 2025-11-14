@@ -15,7 +15,12 @@
       "Bash(docker ps:*)",
       "Bash(docker logs:*)",
       "Bash(curl:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(docker exec:*)",
+      "Bash(taskkill //F //PID 11780)",
+      "Bash(docker-compose ps:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

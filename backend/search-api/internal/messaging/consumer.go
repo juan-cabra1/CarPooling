@@ -55,6 +55,22 @@ func (c *Consumer) connect(rabbitmqURL string) error {
 		return fmt.Errorf("channel creation failed: %w", err)
 	}
 
+	// Declare exchange (idempotent - safe even if trips-api already created it)
+	err = channel.ExchangeDeclare(
+		"trips.events", // name
+		"topic",        // type
+		true,           // durable
+		false,          // auto-deleted
+		false,          // internal
+		false,          // no-wait
+		nil,            // arguments
+	)
+	if err != nil {
+		channel.Close()
+		conn.Close()
+		return fmt.Errorf("exchange declaration failed: %w", err)
+	}
+
 	// Declare queue (idempotent)
 	_, err = channel.QueueDeclare(
 		c.queueName, // name
@@ -69,6 +85,27 @@ func (c *Consumer) connect(rabbitmqURL string) error {
 		conn.Close()
 		return fmt.Errorf("queue declaration failed: %w", err)
 	}
+
+	// Bind queue to exchange with topic pattern
+	// This is the CRITICAL missing piece - without binding, the queue receives ZERO events
+	err = channel.QueueBind(
+		c.queueName,    // queue name
+		"trip.*",       // routing key pattern (matches trip.created, trip.updated, trip.cancelled)
+		"trips.events", // exchange name
+		false,          // no-wait
+		nil,            // arguments
+	)
+	if err != nil {
+		channel.Close()
+		conn.Close()
+		return fmt.Errorf("queue binding failed: %w", err)
+	}
+
+	log.Info().
+		Str("queue", c.queueName).
+		Str("exchange", "trips.events").
+		Str("routing_key", "trip.*").
+		Msg("Queue bound to exchange successfully")
 
 	// Set QoS - prefetch 1 message at a time for fair distribution
 	if err := channel.Qos(1, 0, false); err != nil {
