@@ -3,23 +3,23 @@ package mocks
 import (
 	"context"
 
-	"github.com/juan-cabra1/CarPooling/backend/search-api/internal/domain"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"search-api/internal/domain"
 )
 
 // MockTripRepository is a mock implementation of TripRepository
 type MockTripRepository struct {
-	CreateFunc                    func(ctx context.Context, trip *domain.SearchTrip) error
-	FindByIDFunc                  func(ctx context.Context, id primitive.ObjectID) (*domain.SearchTrip, error)
-	FindByTripIDFunc              func(ctx context.Context, tripID string) (*domain.SearchTrip, error)
-	UpdateFunc                    func(ctx context.Context, trip *domain.SearchTrip) error
-	UpdateStatusFunc              func(ctx context.Context, id primitive.ObjectID, status string) error
-	UpdateStatusByTripIDFunc      func(ctx context.Context, tripID string, status string) error
-	UpdateAvailabilityFunc        func(ctx context.Context, id primitive.ObjectID, availableSeats int) error
+	CreateFunc                     func(ctx context.Context, trip *domain.SearchTrip) error
+	FindByIDFunc                   func(ctx context.Context, id string) (*domain.SearchTrip, error)
+	FindByTripIDFunc               func(ctx context.Context, tripID string) (*domain.SearchTrip, error)
+	UpdateFunc                     func(ctx context.Context, trip *domain.SearchTrip) error
+	UpdateStatusFunc               func(ctx context.Context, id string, status string) error
+	UpdateStatusByTripIDFunc       func(ctx context.Context, tripID string, status string) error
+	UpdateAvailabilityFunc         func(ctx context.Context, id string, availableSeats int) error
 	UpdateAvailabilityByTripIDFunc func(ctx context.Context, tripID string, availableSeats, reservedSeats int, status string) error
-	SearchFunc                    func(ctx context.Context, filters map[string]interface{}, page, limit int) ([]domain.SearchTrip, int64, error)
-	SearchByLocationFunc          func(ctx context.Context, lat, lng, radiusKm float64, additionalFilters map[string]interface{}) ([]domain.SearchTrip, error)
-	SearchByRouteFunc             func(ctx context.Context, originCity, destinationCity string, filters map[string]interface{}) ([]domain.SearchTrip, error)
+	DeleteByTripIDFunc             func(ctx context.Context, tripID string) error
+	SearchFunc                     func(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*domain.SearchTrip, int64, error)
+	SearchByLocationFunc           func(ctx context.Context, lat, lng float64, radiusKm int, additionalFilters map[string]interface{}) ([]*domain.SearchTrip, error)
+	SearchByRouteFunc              func(ctx context.Context, originCity, destinationCity string, filters map[string]interface{}) ([]*domain.SearchTrip, error)
 }
 
 // Create calls the mocked CreateFunc
@@ -31,7 +31,7 @@ func (m *MockTripRepository) Create(ctx context.Context, trip *domain.SearchTrip
 }
 
 // FindByID calls the mocked FindByIDFunc
-func (m *MockTripRepository) FindByID(ctx context.Context, id primitive.ObjectID) (*domain.SearchTrip, error) {
+func (m *MockTripRepository) FindByID(ctx context.Context, id string) (*domain.SearchTrip, error) {
 	if m.FindByIDFunc != nil {
 		return m.FindByIDFunc(ctx, id)
 	}
@@ -55,7 +55,7 @@ func (m *MockTripRepository) Update(ctx context.Context, trip *domain.SearchTrip
 }
 
 // UpdateStatus calls the mocked UpdateStatusFunc
-func (m *MockTripRepository) UpdateStatus(ctx context.Context, id primitive.ObjectID, status string) error {
+func (m *MockTripRepository) UpdateStatus(ctx context.Context, id string, status string) error {
 	if m.UpdateStatusFunc != nil {
 		return m.UpdateStatusFunc(ctx, id, status)
 	}
@@ -71,7 +71,7 @@ func (m *MockTripRepository) UpdateStatusByTripID(ctx context.Context, tripID st
 }
 
 // UpdateAvailability calls the mocked UpdateAvailabilityFunc
-func (m *MockTripRepository) UpdateAvailability(ctx context.Context, id primitive.ObjectID, availableSeats int) error {
+func (m *MockTripRepository) UpdateAvailability(ctx context.Context, id string, availableSeats int) error {
 	if m.UpdateAvailabilityFunc != nil {
 		return m.UpdateAvailabilityFunc(ctx, id, availableSeats)
 	}
@@ -86,28 +86,36 @@ func (m *MockTripRepository) UpdateAvailabilityByTripID(ctx context.Context, tri
 	return nil
 }
 
+// DeleteByTripID calls the mocked DeleteByTripIDFunc
+func (m *MockTripRepository) DeleteByTripID(ctx context.Context, tripID string) error {
+	if m.DeleteByTripIDFunc != nil {
+		return m.DeleteByTripIDFunc(ctx, tripID)
+	}
+	return nil
+}
+
 // Search calls the mocked SearchFunc
-func (m *MockTripRepository) Search(ctx context.Context, filters map[string]interface{}, page, limit int) ([]domain.SearchTrip, int64, error) {
+func (m *MockTripRepository) Search(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*domain.SearchTrip, int64, error) {
 	if m.SearchFunc != nil {
 		return m.SearchFunc(ctx, filters, page, limit)
 	}
-	return []domain.SearchTrip{}, 0, nil
+	return []*domain.SearchTrip{}, 0, nil
 }
 
 // SearchByLocation calls the mocked SearchByLocationFunc
-func (m *MockTripRepository) SearchByLocation(ctx context.Context, lat, lng, radiusKm float64, additionalFilters map[string]interface{}) ([]domain.SearchTrip, error) {
+func (m *MockTripRepository) SearchByLocation(ctx context.Context, lat, lng float64, radiusKm int, additionalFilters map[string]interface{}) ([]*domain.SearchTrip, error) {
 	if m.SearchByLocationFunc != nil {
 		return m.SearchByLocationFunc(ctx, lat, lng, radiusKm, additionalFilters)
 	}
-	return []domain.SearchTrip{}, nil
+	return []*domain.SearchTrip{}, nil
 }
 
 // SearchByRoute calls the mocked SearchByRouteFunc
-func (m *MockTripRepository) SearchByRoute(ctx context.Context, originCity, destinationCity string, filters map[string]interface{}) ([]domain.SearchTrip, error) {
+func (m *MockTripRepository) SearchByRoute(ctx context.Context, originCity, destinationCity string, filters map[string]interface{}) ([]*domain.SearchTrip, error) {
 	if m.SearchByRouteFunc != nil {
 		return m.SearchByRouteFunc(ctx, originCity, destinationCity, filters)
 	}
-	return []domain.SearchTrip{}, nil
+	return []*domain.SearchTrip{}, nil
 }
 
 // MockEventRepository is a mock implementation of EventRepository
