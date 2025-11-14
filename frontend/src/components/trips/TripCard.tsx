@@ -1,15 +1,19 @@
 import { Link } from 'react-router-dom'
-import { MapPin, Calendar, DollarSign, Users, Star, Car } from 'lucide-react'
+import { MapPin, Calendar, Users, Star, Car } from 'lucide-react'
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import type { SearchTrip } from '@/types'
+import type { SearchTrip, Trip } from '@/types'
 
 interface TripCardProps {
-  trip: SearchTrip
+  trip: SearchTrip | Trip
 }
 
 export default function TripCard({ trip }: TripCardProps) {
+  // Check if trip is SearchTrip or Trip
+  const isSearchTrip = 'driver' in trip && 'trip_id' in trip
+  const tripId = isSearchTrip ? (trip as SearchTrip).trip_id : trip.id
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     return new Intl.DateTimeFormat('es-AR', {
@@ -61,22 +65,24 @@ export default function TripCard({ trip }: TripCardProps) {
       </CardHeader>
 
       <CardContent className="pt-4 pb-3">
-        {/* Driver Info */}
-        <div className="flex items-center gap-3 mb-4 pb-4 border-b">
-          <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center text-primary font-bold text-lg">
-            {trip.driver.name.charAt(0).toUpperCase()}
-          </div>
-          <div className="flex-1">
-            <div className="font-semibold text-gray-900">{trip.driver.name}</div>
-            <div className="flex items-center gap-1 text-sm">
-              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="font-medium">{trip.driver.rating.toFixed(1)}</span>
-              <span className="text-muted-foreground">
-                • {trip.driver.total_trips} viajes
-              </span>
+        {/* Driver Info - Only show for SearchTrip */}
+        {isSearchTrip && (
+          <div className="flex items-center gap-3 mb-4 pb-4 border-b">
+            <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center text-primary font-bold text-lg">
+              {(trip as SearchTrip).driver.name.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1">
+              <div className="font-semibold text-gray-900">{(trip as SearchTrip).driver.name}</div>
+              <div className="flex items-center gap-1 text-sm">
+                <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                <span className="font-medium">{(trip as SearchTrip).driver.rating.toFixed(1)}</span>
+                <span className="text-muted-foreground">
+                  • {(trip as SearchTrip).driver.total_trips} viajes
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Trip Details */}
         <div className="space-y-3">
@@ -123,7 +129,7 @@ export default function TripCard({ trip }: TripCardProps) {
       </CardContent>
 
       <CardFooter className="bg-gray-50 border-t">
-        <Link to={`/trips/${trip.trip_id}`} className="w-full">
+        <Link to={`/trips/${tripId}`} className="w-full">
           <Button className="w-full group-hover:bg-primary-600 transition-colors">
             Ver Detalles
           </Button>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { MapPin, Calendar, Users, DollarSign, Car, ArrowLeft, Star, Edit, Trash2, AlertCircle } from 'lucide-react'
+import { MapPin, Calendar, Users, DollarSign, Car, ArrowLeft, Edit, Trash2, AlertCircle, Star, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -11,18 +11,20 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { tripsService, getErrorMessage } from '@/services'
+import { tripsService, searchService, getErrorMessage } from '@/services'
 import { useAuth } from '@/context/AuthContext'
-import type { Trip } from '@/types'
+import BookingModal from '@/components/BookingModal'
+import type { SearchTrip } from '@/types'
 
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [trip, setTrip] = useState<Trip | null>(null)
+  const [trip, setTrip] = useState<SearchTrip | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -36,7 +38,8 @@ export default function TripDetailPage() {
     try {
       setLoading(true)
       setError('')
-      const data = await tripsService.getTripById(id)
+      // Use search-api to get denormalized trip data with driver information
+      const data = await searchService.getTripDetails(id)
       setTrip(data)
     } catch (err) {
       setError(getErrorMessage(err))
@@ -61,6 +64,13 @@ export default function TripDetailPage() {
     } finally {
       setDeleting(false)
     }
+  }
+
+  const handleBookingSuccess = () => {
+    // Refresh trip data to update available seats
+    fetchTrip()
+    // Navigate to bookings page
+    navigate('/my-bookings', { state: { message: 'Reserva creada exitosamente' } })
   }
 
   const formatDate = (dateString: string) => {
@@ -254,7 +264,7 @@ export default function TripDetailPage() {
                     {trip.available_seats} de {trip.total_seats} disponibles
                   </p>
                   <p className="ml-7 text-sm text-gray-600">
-                    {trip.reserved_seats} reservados
+                    {trip.total_seats - trip.available_seats} reservados
                   </p>
                 </div>
 
@@ -271,6 +281,33 @@ export default function TripDetailPage() {
                   </p>
                 </div>
               </div>
+
+              {/* Driver Information - Only show if driver data is available */}
+              {trip.driver && (
+                <div className="pt-6 border-t">
+                  <h3 className="font-semibold text-gray-900 mb-4 text-lg flex items-center gap-2">
+                    <User className="w-5 h-5 text-primary" />
+                    Conductor
+                  </h3>
+                  <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-primary-50 to-secondary-50 rounded-lg">
+                    <div className="w-16 h-16 rounded-full bg-primary-100 flex items-center justify-center text-primary font-bold text-2xl flex-shrink-0">
+                      {trip.driver.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900 text-lg">{trip.driver.name}</h4>
+                      <div className="flex items-center gap-3 mt-1">
+                        <div className="flex items-center gap-1">
+                          <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                          <span className="font-medium text-gray-900">{trip.driver.rating.toFixed(1)}</span>
+                        </div>
+                        <span className="text-gray-500">•</span>
+                        <span className="text-gray-600">{trip.driver.total_trips} viajes realizados</span>
+                      </div>
+                      <p className="text-sm text-gray-600 mt-1">{trip.driver.email}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Description */}
               {trip.description && (
@@ -300,9 +337,9 @@ export default function TripDetailPage() {
             <CardFooter className="bg-gray-50 border-t flex flex-col sm:flex-row gap-3">
               {isOwner ? (
                 <>
-                  {trip.status === 'published' && trip.reserved_seats === 0 && (
+                  {trip.status === 'published' && (trip.total_seats - trip.available_seats) === 0 && (
                     <>
-                      <Link to={`/trips/${trip.id}/edit`} className="flex-1">
+                      <Link to={`/trips/${trip.trip_id}/edit`} className="flex-1">
                         <Button variant="outline" className="w-full">
                           <Edit className="w-4 h-4 mr-2" />
                           Editar Viaje
@@ -329,7 +366,7 @@ export default function TripDetailPage() {
                       </Button>
                     </>
                   )}
-                  {trip.reserved_seats > 0 && (
+                  {(trip.total_seats - trip.available_seats) > 0 && (
                     <div className="w-full flex items-center justify-center px-4 py-3 bg-yellow-50 border border-yellow-200 rounded-md">
                       <AlertCircle className="w-5 h-5 text-yellow-600 mr-2" />
                       <span className="text-sm text-yellow-700 font-medium">
@@ -339,13 +376,38 @@ export default function TripDetailPage() {
                   )}
                 </>
               ) : (
-                <Button className="w-full" size="lg">
-                  <Users className="w-5 h-5 mr-2" />
-                  Reservar Asientos
-                </Button>
+                <>
+                  {trip.status === 'published' && trip.available_seats > 0 ? (
+                    <Button
+                      className="w-full"
+                      size="lg"
+                      onClick={() => setIsBookingModalOpen(true)}
+                    >
+                      <Users className="w-5 h-5 mr-2" />
+                      Reservar Asientos
+                    </Button>
+                  ) : (
+                    <div className="w-full flex items-center justify-center px-4 py-3 bg-gray-100 border border-gray-200 rounded-md">
+                      <AlertCircle className="w-5 h-5 text-gray-600 mr-2" />
+                      <span className="text-sm text-gray-700 font-medium">
+                        {trip.available_seats === 0 ? 'No hay asientos disponibles' : 'Viaje no disponible para reservas'}
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
             </CardFooter>
           </Card>
+
+          {/* Booking Modal */}
+          {trip && (
+            <BookingModal
+              trip={trip}
+              isOpen={isBookingModalOpen}
+              onClose={() => setIsBookingModalOpen(false)}
+              onSuccess={handleBookingSuccess}
+            />
+          )}
         </div>
       </div>
     </div>
