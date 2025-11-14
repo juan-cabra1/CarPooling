@@ -15,6 +15,8 @@ import CreateTripPage from '@/pages/CreateTripPage'
 import MyTripsPage from '@/pages/MyTripsPage'
 import MyBookingsPage from '@/pages/MyBookingsPage'
 import ProfilePage from '@/pages/ProfilePage'
+import TripDetailPage from '@/pages/TripDetailPage'
+import EditTripPage from '@/pages/EditTripPage'
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -84,6 +86,14 @@ function App() {
             <Route path="forgot-password" element={<ForgotPasswordPage />} />
             <Route path="reset-password" element={<ResetPasswordPage />} />
             <Route path="search" element={<SearchPage />} />
+
+            {/* Trip routes - More specific routes first */}
+            <Route path="trips/:id/edit" element={
+              <ProtectedRoute>
+                <EditTripPage />
+              </ProtectedRoute>
+            } />
+            <Route path="trips/:id" element={<TripDetailPage />} />
 
             {/* Protected routes */}
             <Route path="create-trip" element={

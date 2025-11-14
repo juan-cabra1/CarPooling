@@ -27,6 +27,8 @@
   --color-secondary-900: #134e4a;
 
   --color-accent: #f97316;
+  --color-accent-100: #ffedd5;
+  --color-accent-200: #fed7aa;
   --color-success: #22c55e;
   --color-warning: #eab308;
 
@@ -109,6 +111,36 @@
 
   .shadow-card-hover {
     box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  }
+}
+
+@layer utilities {
+  /* Animaciones blob */
+  @keyframes blob {
+    0% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    33% {
+      transform: translate(30px, -50px) scale(1.1);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.9);
+    }
+    100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+  }
+
+  .animate-blob {
+    animation: blob 7s infinite;
+  }
+
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+
+  .animation-delay-4000 {
+    animation-delay: 4s;
   }
 }
 
