@@ -56,7 +56,7 @@ func main() {
 	router := gin.Default()
 
 	// 8. Configurar rutas
-	routes.SetupRoutes(router, authController, userController, ratingController, authService)
+	routes.SetupRoutes(router, authController, userController, ratingController, authService, userRepo)
 
 	// 9. Iniciar servidor
 	port := ":" + cfg.ServerPort
