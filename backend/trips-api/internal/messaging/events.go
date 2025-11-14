@@ -25,6 +25,14 @@ type TripCancelledEvent struct {
 	CancellationReason string `json:"cancellation_reason"`  // Razón de la cancelación
 }
 
+// TripDeletedEvent representa el evento de eliminación física de viaje
+// Extiende TripEvent con información adicional de eliminación
+type TripDeletedEvent struct {
+	TripEvent
+	DeletedBy int64  `json:"deleted_by"` // ID del usuario que eliminó
+	Reason    string `json:"reason"`     // Razón de la eliminación
+}
+
 // ============================================================================
 // INCOMING EVENTS (Consumed from bookings-api)
 // ============================================================================

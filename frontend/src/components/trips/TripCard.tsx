@@ -128,9 +128,9 @@ export default function TripCard({ trip }: TripCardProps) {
         )}
       </CardContent>
 
-      <CardFooter className="bg-gray-50 border-t">
+      <CardFooter className="bg-gray-50 border-t p-0">
         <Link to={`/trips/${tripId}`} className="w-full">
-          <Button className="w-full group-hover:bg-primary-600 transition-colors">
+          <Button className="w-full rounded-t-none group-hover:bg-primary-600 transition-colors">
             Ver Detalles
           </Button>
         </Link>

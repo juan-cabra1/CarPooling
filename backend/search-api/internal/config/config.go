@@ -8,13 +8,13 @@ import (
 )
 
 type Config struct {
-	ServerPort  string
-	Mongo       MongoConfig
-	Solr        SolrConfig
-	Memcached   MemcachedConfig
-	RabbitMQ    RabbitMQConfig
-	HTTP        HTTPConfig
-	JWT         JWTConfig
+	ServerPort string
+	Mongo      MongoConfig
+	Solr       SolrConfig
+	Memcached  MemcachedConfig
+	RabbitMQ   RabbitMQConfig
+	HTTP       HTTPConfig
+	JWT        JWTConfig
 }
 
 type HTTPConfig struct {

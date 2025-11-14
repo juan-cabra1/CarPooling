@@ -323,3 +323,85 @@ func (s *TripEventService) HandleTripCancelled(ctx context.Context, eventID, tri
 
 	return nil
 }
+
+// HandleTripDeleted processes trip.deleted events
+func (s *TripEventService) HandleTripDeleted(ctx context.Context, eventID, tripID, reason string) error {
+	log.Info().
+		Str("event_id", eventID).
+		Str("event_type", "trip.deleted").
+		Str("trip_id", tripID).
+		Str("reason", reason).
+		Msg("Processing trip.deleted event")
+
+	// Check idempotency
+	processed, err := s.eventRepo.IsEventProcessed(ctx, eventID)
+	if err != nil {
+		log.Error().Err(err).Str("event_id", eventID).Msg("Failed to check event idempotency")
+		return fmt.Errorf("idempotency check failed: %w", err)
+	}
+	if processed {
+		log.Info().Str("event_id", eventID).Msg("Event already processed, skipping")
+		return nil
+	}
+
+	// Delete from MongoDB
+	if err := s.tripRepo.DeleteByTripID(ctx, tripID); err != nil {
+		if domain.IsNotFoundError(err) {
+			// Permanent error - trip doesn't exist (already deleted or never existed)
+			log.Warn().Str("trip_id", tripID).Msg("Trip not found in MongoDB, marking event as processed")
+			processedEvent := &domain.ProcessedEvent{
+				EventID:     eventID,
+				EventType:   "trip.deleted",
+				ProcessedAt: time.Now(),
+				Result:      "skipped",
+			}
+			if markErr := s.eventRepo.MarkEventProcessed(ctx, processedEvent); markErr != nil {
+				log.Error().Err(markErr).Str("event_id", eventID).Msg("Failed to mark event as processed")
+			}
+			return domain.ErrSearchTripNotFound
+		}
+		log.Error().Err(err).Str("trip_id", tripID).Msg("Failed to delete trip from MongoDB")
+		return fmt.Errorf("mongodb delete failed: %w", err)
+	}
+
+	log.Info().Str("trip_id", tripID).Msg("Trip deleted from MongoDB successfully")
+
+	// Delete from Solr (optional - log error but continue)
+	if s.solrClient != nil {
+		if err := s.solrClient.Delete(ctx, tripID); err != nil {
+			log.Error().Err(err).Str("trip_id", tripID).Msg("Failed to delete trip from Solr (continuing)")
+			// Don't return error - MongoDB is source of truth
+		} else {
+			log.Info().Str("trip_id", tripID).Msg("Trip deleted from Solr successfully")
+		}
+	}
+
+	// Invalidate cache for this trip
+	if s.cache != nil {
+		cacheKey := fmt.Sprintf("trip:%s", tripID)
+		if err := s.cache.Delete(ctx, cacheKey); err != nil {
+			log.Error().Err(err).Str("cache_key", cacheKey).Msg("Failed to invalidate cache (continuing)")
+		} else {
+			log.Info().Str("cache_key", cacheKey).Msg("Cache invalidated successfully")
+		}
+	}
+
+	// Mark event as processed
+	processedEvent := &domain.ProcessedEvent{
+		EventID:     eventID,
+		EventType:   "trip.deleted",
+		ProcessedAt: time.Now(),
+		Result:      "success",
+	}
+	if err := s.eventRepo.MarkEventProcessed(ctx, processedEvent); err != nil {
+		log.Error().Err(err).Str("event_id", eventID).Msg("Failed to mark event as processed")
+		return fmt.Errorf("mark event processed failed: %w", err)
+	}
+
+	log.Info().
+		Str("event_id", eventID).
+		Str("trip_id", tripID).
+		Msg("trip.deleted event processed successfully")
+
+	return nil
+}

@@ -23,6 +23,7 @@ type TripRepository interface {
 	UpdateStatusByTripID(ctx context.Context, tripID string, status string) error
 	UpdateAvailability(ctx context.Context, id string, availableSeats int) error
 	UpdateAvailabilityByTripID(ctx context.Context, tripID string, availableSeats int, reservedSeats int, status string) error
+	DeleteByTripID(ctx context.Context, tripID string) error
 	Search(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*domain.SearchTrip, int64, error)
 	SearchByLocation(ctx context.Context, lat, lng float64, radiusKm int, additionalFilters map[string]interface{}) ([]*domain.SearchTrip, error)
 	SearchByRoute(ctx context.Context, originCity, destinationCity string, filters map[string]interface{}) ([]*domain.SearchTrip, error)
@@ -364,6 +365,25 @@ func (r *tripRepository) UpdateAvailabilityByTripID(ctx context.Context, tripID 
 	}
 
 	if result.MatchedCount == 0 {
+		return domain.ErrSearchTripNotFound
+	}
+
+	return nil
+}
+
+// DeleteByTripID deletes a trip from the search index by trip_id
+func (r *tripRepository) DeleteByTripID(ctx context.Context, tripID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"trip_id": tripID}
+
+	result, err := r.collection.DeleteOne(ctx, filter)
+	if err != nil {
+		return fmt.Errorf("failed to delete trip: %w", err)
+	}
+
+	if result.DeletedCount == 0 {
 		return domain.ErrSearchTripNotFound
 	}
 
