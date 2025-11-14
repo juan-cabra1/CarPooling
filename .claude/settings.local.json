@@ -21,6 +21,9 @@
       "Bash(docker-compose ps:*)",
       "Bash(netstat:*)",
       "Bash(findstr:*)"
+      "Bash(npm install:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker-compose build:*)"
     ],
     "deny": [],
     "ask": []

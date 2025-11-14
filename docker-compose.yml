@@ -132,6 +132,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       TRIPS_API_URL: http://trips-api:8002
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      # SMTP Configuration for email verification
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:-matiasjbocco@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-fzqc ffyv jzuy rsvv}
+      APP_URL: ${APP_URL:-http://localhost:3000}
     networks:
       - carpooling-network
     depends_on:
