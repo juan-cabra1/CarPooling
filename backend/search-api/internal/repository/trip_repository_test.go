@@ -210,7 +210,7 @@ func TestTripRepository_Search(t *testing.T) {
 	filters := map[string]interface{}{
 		"status": "published",
 	}
-	trips, total, err := repo.Search(context.Background(), filters, 1, 10)
+	trips, total, err := repo.Search(context.Background(), filters, 1, 10, "popularity", "desc")
 	require.NoError(t, err, "Failed to search trips")
 	assert.Equal(t, int64(1), total, "Should find 1 published trip")
 	assert.Len(t, trips, 1, "Should return 1 trip")
@@ -313,19 +313,19 @@ func TestTripRepository_Pagination(t *testing.T) {
 	}
 
 	// Test pagination: page 1, limit 2
-	trips, total, err := repo.Search(context.Background(), map[string]interface{}{}, 1, 2)
+	trips, total, err := repo.Search(context.Background(), map[string]interface{}{}, 1, 2, "", "")
 	require.NoError(t, err, "Failed to search with pagination")
 	assert.Equal(t, int64(5), total, "Total should be 5")
 	assert.Len(t, trips, 2, "Should return 2 trips on page 1")
 
 	// Test pagination: page 2, limit 2
-	trips, total, err = repo.Search(context.Background(), map[string]interface{}{}, 2, 2)
+	trips, total, err = repo.Search(context.Background(), map[string]interface{}{}, 2, 2, "", "")
 	require.NoError(t, err, "Failed to search with pagination")
 	assert.Equal(t, int64(5), total, "Total should still be 5")
 	assert.Len(t, trips, 2, "Should return 2 trips on page 2")
 
 	// Test pagination: page 3, limit 2
-	trips, total, err = repo.Search(context.Background(), map[string]interface{}{}, 3, 2)
+	trips, total, err = repo.Search(context.Background(), map[string]interface{}{}, 3, 2, "", "")
 	require.NoError(t, err, "Failed to search with pagination")
 	assert.Equal(t, int64(5), total, "Total should still be 5")
 	assert.Len(t, trips, 1, "Should return 1 trip on page 3")
