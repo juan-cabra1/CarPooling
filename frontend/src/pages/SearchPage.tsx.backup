@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Search, Calendar, Users, DollarSign, Star, Filter, X, ArrowRight } from 'lucide-react'
+import { Search, MapPin, Calendar, Users, DollarSign, Star, Filter, X, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Card,
   CardContent,
@@ -14,197 +13,76 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { LocationInput, RadiusSlider } from '@/components/search'
 import { searchService, getErrorMessage } from '@/services'
-import type { SearchTrip, SearchQuery, LocationInput as LocationInputType, SearchSortBy, SearchSortOrder } from '@/types'
+import type { SearchTrip, SearchQuery } from '@/types'
+
+interface SearchFilters {
+  origin_city?: string
+  destination_city?: string
+  date_from?: string
+  min_seats?: number
+  max_price?: number
+  sort_by?: 'date_asc' | 'date_desc' | 'price_asc' | 'price_desc'
+}
 
 export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [trips, setTrips] = useState<SearchTrip[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [validationError, setValidationError] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [total, setTotal] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
 
-  // Form state - individual states for better control
-  const [origin, setOrigin] = useState<LocationInputType | null>(null)
-  const [destination, setDestination] = useState<LocationInputType | null>(null)
-  const [useOriginRadius, setUseOriginRadius] = useState(false)
-  const [useDestinationRadius, setUseDestinationRadius] = useState(false)
-  const [originRadius, setOriginRadius] = useState(10)
-  const [destinationRadius, setDestinationRadius] = useState(10)
-  const [departureDate, setDepartureDate] = useState('')
-  const [minSeats, setMinSeats] = useState<number | undefined>(undefined)
-  const [maxPrice, setMaxPrice] = useState<number | undefined>(undefined)
-  const [sortOption, setSortOption] = useState('departure_time|asc')
+  // Form state
+  const [searchQuery, setSearchQuery] = useState<SearchFilters>({
+    origin_city: searchParams.get('origin_city') || '',
+    destination_city: searchParams.get('destination_city') || '',
+    date_from: searchParams.get('date_from') || '',
+    min_seats: searchParams.get('min_seats') ? parseInt(searchParams.get('min_seats')!) : undefined,
+    max_price: searchParams.get('max_price') ? parseInt(searchParams.get('max_price')!) : undefined,
+    sort_by: (searchParams.get('sort_by') as any) || 'date_asc',
+  })
 
-  // Initialize from URL params on mount
   useEffect(() => {
-    // Parse location from URL params
-    const originCity = searchParams.get('origin_city')
-    const originProvince = searchParams.get('origin_province')
-    const originAddress = searchParams.get('origin_address')
-    const originLat = searchParams.get('origin_lat')
-    const originLng = searchParams.get('origin_lng')
-
-    if (originCity && originProvince) {
-      setOrigin({
-        city: originCity,
-        province: originProvince,
-        address: originAddress || `${originCity}, ${originProvince}`,
-        coordinates: originLat && originLng ? {
-          lat: parseFloat(originLat),
-          lng: parseFloat(originLng)
-        } : undefined
-      })
-    }
-
-    const destCity = searchParams.get('destination_city')
-    const destProvince = searchParams.get('destination_province')
-    const destAddress = searchParams.get('destination_address')
-    const destLat = searchParams.get('destination_lat')
-    const destLng = searchParams.get('destination_lng')
-
-    if (destCity && destProvince) {
-      setDestination({
-        city: destCity,
-        province: destProvince,
-        address: destAddress || `${destCity}, ${destProvince}`,
-        coordinates: destLat && destLng ? {
-          lat: parseFloat(destLat),
-          lng: parseFloat(destLng)
-        } : undefined
-      })
-    }
-
-    // Parse other filters
-    const date = searchParams.get('departure_date')
-    if (date) setDepartureDate(date)
-
-    const seats = searchParams.get('min_seats')
-    if (seats) setMinSeats(parseInt(seats))
-
-    const price = searchParams.get('max_price')
-    if (price) setMaxPrice(parseInt(price))
-
-    const originRad = searchParams.get('origin_radius')
-    if (originRad) {
-      setOriginRadius(parseInt(originRad))
-      setUseOriginRadius(true)
-    }
-
-    const destRad = searchParams.get('destination_radius')
-    if (destRad) {
-      setDestinationRadius(parseInt(destRad))
-      setUseDestinationRadius(true)
-    }
-
-    const sortByParam = searchParams.get('sort_by') as SearchSortBy
-    const sortOrderParam = searchParams.get('sort_order') as SearchSortOrder
-    if (sortByParam && sortOrderParam) {
-      setSortOption(`${sortByParam}|${sortOrderParam}`)
-    }
-
-    // Only auto-search if there are URL params (bookmarked search)
-    if (searchParams.toString()) {
-      handleSearch()
-    }
+    // Auto-search on page load to show all trips by default
+    handleSearch()
   }, [])
-
-  const validateSearch = (): boolean => {
-    // Clear any previous validation errors
-    setValidationError('')
-    return true
-  }
 
   const handleSearch = async (page = 1) => {
     try {
       setLoading(true)
       setError('')
-      setValidationError('')
       setCurrentPage(page)
 
-      // Build search query
       const query: SearchQuery = {
+        ...searchQuery,
         page,
         limit: 20,
       }
 
-      // Add location filters
-      if (origin) {
-        query.origin = origin
-        // Only add radius if user enabled it AND coordinates are available
-        if (origin.coordinates && useOriginRadius) {
-          query.origin_radius = originRadius
+      // Remove empty values
+      Object.keys(query).forEach(key => {
+        if (query[key as keyof SearchQuery] === '' || query[key as keyof SearchQuery] === undefined) {
+          delete query[key as keyof SearchQuery]
         }
-      }
-
-      if (destination) {
-        query.destination = destination
-        // Only add radius if user enabled it AND coordinates are available
-        if (destination.coordinates && useDestinationRadius) {
-          query.destination_radius = destinationRadius
-        }
-      }
-
-      // Add other filters
-      if (departureDate) query.departure_date = departureDate
-      if (minSeats) query.min_seats = minSeats
-      if (maxPrice) query.max_price = maxPrice
-
-      // Parse and add sorting from combined option
-      const [sortBy, sortOrder] = sortOption.split('|') as [SearchSortBy, SearchSortOrder]
-      query.sort_by = sortBy
-      query.sort_order = sortOrder
+      })
 
       const response = await searchService.searchTrips(query)
       setTrips(response.trips)
       setTotal(response.total)
 
-      // Update URL params for bookmarking
+      // Update URL params
       const params = new URLSearchParams()
-
-      // Origin location
-      if (origin) {
-        params.set('origin_city', origin.city)
-        params.set('origin_province', origin.province)
-        if (origin.address) params.set('origin_address', origin.address)
-        if (origin.coordinates) {
-          params.set('origin_lat', origin.coordinates.lat.toString())
-          params.set('origin_lng', origin.coordinates.lng.toString())
-          // Only add radius to URL if user enabled it
-          if (useOriginRadius) {
-            params.set('origin_radius', originRadius.toString())
-          }
-        }
+      if (query.origin_city) params.set('origin_city', query.origin_city)
+      if (query.destination_city) params.set('destination_city', query.destination_city)
+      if (query.date_from) params.set('date_from', query.date_from)
+      if (query.min_seats) params.set('min_seats', query.min_seats.toString())
+      if (query.max_price) params.set('max_price', query.max_price.toString())
+      // Only add sort_by to URL if there are other filters active
+      if (query.sort_by && (query.origin_city || query.destination_city || query.date_from || query.min_seats || query.max_price)) {
+        params.set('sort_by', query.sort_by)
       }
-
-      // Destination location
-      if (destination) {
-        params.set('destination_city', destination.city)
-        params.set('destination_province', destination.province)
-        if (destination.address) params.set('destination_address', destination.address)
-        if (destination.coordinates) {
-          params.set('destination_lat', destination.coordinates.lat.toString())
-          params.set('destination_lng', destination.coordinates.lng.toString())
-          // Only add radius to URL if user enabled it
-          if (useDestinationRadius) {
-            params.set('destination_radius', destinationRadius.toString())
-          }
-        }
-      }
-
-      // Other filters
-      if (departureDate) params.set('departure_date', departureDate)
-      if (minSeats) params.set('min_seats', minSeats.toString())
-      if (maxPrice) params.set('max_price', maxPrice.toString())
-
-      // Sorting
-      params.set('sort_by', sortBy)
-      params.set('sort_order', sortOrder)
-
       setSearchParams(params)
     } catch (err) {
       setError(getErrorMessage(err))
@@ -214,19 +92,18 @@ export default function SearchPage() {
   }
 
   const handleClearFilters = () => {
-    setOrigin(null)
-    setDestination(null)
-    setUseOriginRadius(false)
-    setUseDestinationRadius(false)
-    setOriginRadius(10)
-    setDestinationRadius(10)
-    setDepartureDate('')
-    setMinSeats(undefined)
-    setMaxPrice(undefined)
-    setSortOption('departure_time|asc')
+    setSearchQuery({
+      origin_city: '',
+      destination_city: '',
+      date_from: '',
+      min_seats: undefined,
+      max_price: undefined,
+      sort_by: 'date_asc',
+      page: 1,
+      limit: 20,
+    })
     setTrips([])
     setTotal(0)
-    setValidationError('')
     setSearchParams({})
   }
 
@@ -271,110 +148,52 @@ export default function SearchPage() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
-                  if (validateSearch()) {
-                    handleSearch()
-                  }
+                  handleSearch()
                 }}
                 className="space-y-6"
               >
-                {/* Validation Error */}
-                {validationError && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-                    {validationError}
-                  </div>
-                )}
-
                 {/* Main Search Fields */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Origin Location */}
-                  <div className="space-y-4">
-                    <LocationInput
-                      label="Origen"
-                      value={origin}
-                      onChange={setOrigin}
-                      placeholder="Ej: Córdoba, Buenos Aires, Mendoza"
-                    />
-
-                    {/* Origin Radius Toggle - only shown if coordinates available */}
-                    {origin?.coordinates && (
-                      <div className="space-y-3">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id="use-origin-radius"
-                            checked={useOriginRadius}
-                            onCheckedChange={(checked) => setUseOriginRadius(!!checked)}
-                          />
-                          <label
-                            htmlFor="use-origin-radius"
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                          >
-                            Buscar por radio desde este punto
-                          </label>
-                        </div>
-
-                        {useOriginRadius && (
-                          <RadiusSlider
-                            value={originRadius}
-                            onChange={setOriginRadius}
-                            label="Radio de búsqueda"
-                          />
-                        )}
-                      </div>
-                    )}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="origin_city">Origen</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input
+                        id="origin_city"
+                        placeholder="Ciudad de origen"
+                        value={searchQuery.origin_city || ''}
+                        onChange={(e) => setSearchQuery({ ...searchQuery, origin_city: e.target.value })}
+                        className="pl-10"
+                      />
+                    </div>
                   </div>
 
-                  {/* Destination Location */}
-                  <div className="space-y-4">
-                    <LocationInput
-                      label="Destino"
-                      value={destination}
-                      onChange={setDestination}
-                      placeholder="Ej: Medellín, Antioquia"
-                    />
-
-                    {/* Destination Radius - optional with checkbox */}
-                    {destination?.coordinates && (
-                      <div className="space-y-3">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id="use-destination-radius"
-                            checked={useDestinationRadius}
-                            onCheckedChange={(checked) =>
-                              setUseDestinationRadius(!!checked)
-                            }
-                          />
-                          <label
-                            htmlFor="use-destination-radius"
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                          >
-                            Buscar por radio hasta este punto
-                          </label>
-                        </div>
-
-                        {useDestinationRadius && (
-                          <RadiusSlider
-                            value={destinationRadius}
-                            onChange={setDestinationRadius}
-                            label="Radio de búsqueda hasta destino"
-                          />
-                        )}
-                      </div>
-                    )}
+                  <div>
+                    <Label htmlFor="destination_city">Destino</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input
+                        id="destination_city"
+                        placeholder="Ciudad de destino"
+                        value={searchQuery.destination_city || ''}
+                        onChange={(e) => setSearchQuery({ ...searchQuery, destination_city: e.target.value })}
+                        className="pl-10"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {/* Departure Date */}
-                <div>
-                  <Label htmlFor="departure_date">Fecha de salida</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                      id="departure_date"
-                      type="date"
-                      value={departureDate}
-                      onChange={(e) => setDepartureDate(e.target.value)}
-                      className="pl-10"
-                    />
+                  <div>
+                    <Label htmlFor="date_from">Fecha desde</Label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input
+                        id="date_from"
+                        type="date"
+                        value={searchQuery.date_from || ''}
+                        onChange={(e) => setSearchQuery({ ...searchQuery, date_from: e.target.value })}
+                        className="pl-10"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -427,8 +246,8 @@ export default function SearchPage() {
                           type="number"
                           min="1"
                           placeholder="Ej: 2"
-                          value={minSeats || ''}
-                          onChange={(e) => setMinSeats(e.target.value ? parseInt(e.target.value) : undefined)}
+                          value={searchQuery.min_seats || ''}
+                          onChange={(e) => setSearchQuery({ ...searchQuery, min_seats: e.target.value ? parseInt(e.target.value) : undefined })}
                           className="pl-10"
                         />
                       </div>
@@ -443,27 +262,26 @@ export default function SearchPage() {
                           type="number"
                           min="0"
                           placeholder="Ej: 5000"
-                          value={maxPrice || ''}
-                          onChange={(e) => setMaxPrice(e.target.value ? parseInt(e.target.value) : undefined)}
+                          value={searchQuery.max_price || ''}
+                          onChange={(e) => setSearchQuery({ ...searchQuery, max_price: e.target.value ? parseInt(e.target.value) : undefined })}
                           className="pl-10"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <Label htmlFor="sort_option">Ordenar por</Label>
+                      <Label htmlFor="sort_by">Ordenar por</Label>
                       <select
-                        id="sort_option"
-                        value={sortOption}
-                        onChange={(e) => setSortOption(e.target.value)}
-                        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        id="sort_by"
+                        value={searchQuery.sort_by || 'date_asc'}
+                        onChange={(e) => setSearchQuery({ ...searchQuery, sort_by: e.target.value as any })}
+                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
-                        <option value="departure_time|asc">Salida más temprana</option>
-                        <option value="departure_time|desc">Salida más tardía</option>
-                        <option value="price|asc">Precio más bajo</option>
-                        <option value="price|desc">Precio más alto</option>
-                        <option value="rating|desc">Mejor calificación</option>
-                        <option value="popularity|desc">Más popular</option>
+                        <option value="date_asc">Fecha más cercana</option>
+                        <option value="date_desc">Fecha más lejana</option>
+                        <option value="price_asc">Precio más bajo</option>
+                        <option value="price_desc">Precio más alto</option>
+                        <option value="popularity">Más popular</option>
                       </select>
                     </div>
                   </div>
@@ -485,7 +303,7 @@ export default function SearchPage() {
           {trips.length > 0 && (
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                {origin || destination
+                {searchQuery.origin_city || searchQuery.destination_city
                   ? `${total} ${total === 1 ? 'viaje encontrado' : 'viajes encontrados'}`
                   : `Todos los viajes disponibles (${total})`}
               </h2>
@@ -621,11 +439,11 @@ export default function SearchPage() {
                   <Search className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                   <h2 className="text-2xl font-bold text-gray-900 mb-2">No se encontraron viajes</h2>
                   <p className="text-gray-600 mb-6">
-                    {origin || destination
+                    {searchQuery.origin_city || searchQuery.destination_city
                       ? 'Intenta modificar tus criterios de búsqueda o explora otros destinos'
                       : 'No hay viajes disponibles en este momento'}
                   </p>
-                  {(origin || destination) && (
+                  {(searchQuery.origin_city || searchQuery.destination_city) && (
                     <Button onClick={handleClearFilters} variant="outline">
                       Limpiar búsqueda
                     </Button>

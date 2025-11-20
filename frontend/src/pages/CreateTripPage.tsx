@@ -13,27 +13,20 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { LocationInput } from '@/components/search'
 import { tripsService, getErrorMessage } from '@/services'
-import type { CreateTripRequest, Location, Car as CarType, Preferences } from '@/types'
+import type { CreateTripRequest, LocationInput as LocationInputType, Car as CarType, Preferences } from '@/types'
 
 export default function CreateTripPage() {
   const navigate = useNavigate()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const [formData, setFormData] = useState<CreateTripRequest>({
-    origin: {
-      city: '',
-      province: '',
-      address: '',
-      coordinates: { lat: 0, lng: 0 },
-    },
-    destination: {
-      city: '',
-      province: '',
-      address: '',
-      coordinates: { lat: 0, lng: 0 },
-    },
+  // Location states (separate for autocomplete components)
+  const [origin, setOrigin] = useState<LocationInputType | null>(null)
+  const [destination, setDestination] = useState<LocationInputType | null>(null)
+
+  const [formData, setFormData] = useState({
     departure_datetime: '',
     estimated_arrival_datetime: '',
     price_per_seat: 0,
@@ -53,31 +46,20 @@ export default function CreateTripPage() {
     description: '',
   })
 
-  // Coordenadas aproximadas de ciudades argentinas (en el futuro usar API de geocodificación)
-  const getCityCoordinates = (city: string): { lat: number; lng: number } => {
-    const cityCoords: Record<string, { lat: number; lng: number }> = {
-      'cordoba': { lat: -31.4201, lng: -64.1888 },
-      'buenos aires': { lat: -34.6037, lng: -58.3816 },
-      'rosario': { lat: -32.9442, lng: -60.6505 },
-      'mendoza': { lat: -32.8895, lng: -68.8458 },
-      'tucuman': { lat: -26.8083, lng: -65.2176 },
-      'salta': { lat: -24.7859, lng: -65.4117 },
-      'santa fe': { lat: -31.6333, lng: -60.7000 },
-      'mar del plata': { lat: -38.0055, lng: -57.5426 },
-      'catamarca': { lat: -28.4696, lng: -65.7795 },
-      'villa carlos paz': { lat: -31.4204, lng: -64.4975 },
-    }
-
-    const normalizedCity = city.toLowerCase().trim()
-    return cityCoords[normalizedCity] || { lat: -34.6037, lng: -58.3816 } // Default: Buenos Aires
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     try {
       setSaving(true)
       setError('')
+
+      // Validación de ubicaciones con coordenadas
+      if (!origin?.coordinates || !destination?.coordinates) {
+        setError('Debe seleccionar las ubicaciones del menú de autocompletado')
+        setSaving(false)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
 
       // Validación de fechas
       const departureDate = new Date(formData.departure_datetime)
@@ -86,31 +68,37 @@ export default function CreateTripPage() {
 
       if (departureDate < now) {
         setError('La fecha de salida debe ser en el futuro')
+        setSaving(false)
         return
       }
 
       if (arrivalDate <= departureDate) {
         setError('La fecha de llegada debe ser posterior a la fecha de salida')
+        setSaving(false)
         return
       }
 
-      // Obtener coordenadas basadas en las ciudades
-      const originCoords = getCityCoordinates(formData.origin.city)
-      const destCoords = getCityCoordinates(formData.destination.city)
-
-      // Convertir fechas a ISO 8601 y agregar coordenadas
+      // Construir request con ubicaciones validadas
       const createData: CreateTripRequest = {
-        ...formData,
         origin: {
-          ...formData.origin,
-          coordinates: originCoords,
+          city: origin.city,
+          province: origin.province,
+          address: origin.address || `${origin.city}, ${origin.province}`,
+          coordinates: origin.coordinates,
         },
         destination: {
-          ...formData.destination,
-          coordinates: destCoords,
+          city: destination.city,
+          province: destination.province,
+          address: destination.address || `${destination.city}, ${destination.province}`,
+          coordinates: destination.coordinates,
         },
         departure_datetime: departureDate.toISOString(),
         estimated_arrival_datetime: arrivalDate.toISOString(),
+        price_per_seat: formData.price_per_seat,
+        total_seats: formData.total_seats,
+        car: formData.car,
+        preferences: formData.preferences,
+        description: formData.description,
       }
 
       const newTrip = await tripsService.createTrip(createData)
@@ -125,18 +113,18 @@ export default function CreateTripPage() {
     }
   }
 
-  const handleChange = (field: keyof CreateTripRequest, value: any) => {
+  const handleChange = (field: string, value: any) => {
     setFormData(prev => ({
       ...prev,
       [field]: value,
     }))
   }
 
-  const handleNestedChange = (parent: keyof CreateTripRequest, field: string, value: any) => {
+  const handleNestedChange = (parent: string, field: string, value: any) => {
     setFormData(prev => ({
       ...prev,
       [parent]: {
-        ...(prev[parent] as any),
+        ...(prev[parent as keyof typeof prev] as any),
         [field]: value,
       },
     }))
@@ -190,89 +178,27 @@ export default function CreateTripPage() {
                     {/* Origen */}
                     <div className="space-y-4 p-4 border rounded-lg bg-white">
                       <h4 className="font-semibold text-primary">Origen</h4>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="origin-city">
-                          Ciudad <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          id="origin-city"
-                          value={formData.origin.city}
-                          onChange={(e) => handleNestedChange('origin', 'city', e.target.value)}
-                          placeholder="Ej: Córdoba"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="origin-province">
-                          Provincia <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          id="origin-province"
-                          value={formData.origin.province}
-                          onChange={(e) => handleNestedChange('origin', 'province', e.target.value)}
-                          placeholder="Ej: Córdoba"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="origin-address">
-                          Dirección <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          id="origin-address"
-                          value={formData.origin.address}
-                          onChange={(e) => handleNestedChange('origin', 'address', e.target.value)}
-                          placeholder="Ej: Av. Colón 1234"
-                          required
-                        />
-                      </div>
+                      <LocationInput
+                        label="Ubicación de origen"
+                        labelClassName='text-black'
+                        value={origin}
+                        onChange={setOrigin}
+                        placeholder="Ej: Córdoba, Buenos Aires, Mendoza"
+                        required
+                      />
                     </div>
 
                     {/* Destino */}
                     <div className="space-y-4 p-4 border rounded-lg bg-white">
                       <h4 className="font-semibold text-secondary">Destino</h4>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="destination-city">
-                          Ciudad <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          id="destination-city"
-                          value={formData.destination.city}
-                          onChange={(e) => handleNestedChange('destination', 'city', e.target.value)}
-                          placeholder="Ej: Buenos Aires"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="destination-province">
-                          Provincia <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          id="destination-province"
-                          value={formData.destination.province}
-                          onChange={(e) => handleNestedChange('destination', 'province', e.target.value)}
-                          placeholder="Ej: Buenos Aires"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="destination-address">
-                          Dirección <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          id="destination-address"
-                          value={formData.destination.address}
-                          onChange={(e) => handleNestedChange('destination', 'address', e.target.value)}
-                          placeholder="Ej: Av. 9 de Julio 1000"
-                          required
-                        />
-                      </div>
+                      <LocationInput
+                        label="Ubicación de destino"
+                        labelClassName='text-black'
+                        value={destination}
+                        onChange={setDestination}
+                        placeholder="Ej: Buenos Aires, Rosario, Mendoza"
+                        required
+                      />
                     </div>
                   </div>
                 </div>

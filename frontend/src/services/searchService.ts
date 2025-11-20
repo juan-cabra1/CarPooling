@@ -20,17 +20,18 @@ const SEARCH_BASE = '/search' // Note: Proxy adds /api/v1 prefix automatically
 /**
  * Search trips with filters
  * Public endpoint - no authentication required
- * Supports city-based search, date range, price filters, preferences, etc.
+ * Supports structured location search with Google Places integration
  * @param query - Search filters and pagination
  * @returns Paginated search results with denormalized trip and driver data
  * @example
  * const { trips, total, page, limit } = await searchService.searchTrips({
- *   origin_city: 'Bogotá',
- *   destination_city: 'Medellín',
+ *   origin: { city: 'Bogotá', province: 'Cundinamarca', address: '...' },
+ *   destination: { city: 'Medellín', province: 'Antioquia', address: '...' },
+ *   origin_radius: 10,
  *   min_seats: 2,
  *   max_price: 50000,
- *   pets_allowed: false,
- *   sort_by: 'price_asc',
+ *   sort_by: 'price',
+ *   sort_order: 'asc',
  *   page: 1,
  *   limit: 20
  * })
@@ -38,13 +39,38 @@ const SEARCH_BASE = '/search' // Note: Proxy adds /api/v1 prefix automatically
 export async function searchTrips(query: SearchQuery): Promise<SearchResponse<SearchTrip>> {
   const params = new URLSearchParams()
 
-  // Location filters
-  if (query.origin_city) params.append('origin_city', query.origin_city)
-  if (query.destination_city) params.append('destination_city', query.destination_city)
+  // Origin location (structured)
+  if (query.origin) {
+    if (query.origin.city) params.append('origin_city', query.origin.city)
+    if (query.origin.province) params.append('origin_province', query.origin.province)
+    if (query.origin.address) params.append('origin_address', query.origin.address)
 
-  // Date filters
-  if (query.date_from) params.append('date_from', query.date_from)
-  if (query.date_to) params.append('date_to', query.date_to)
+    // Coordinates from Google Places (if available)
+    if (query.origin.coordinates) {
+      params.append('origin_lat', query.origin.coordinates.lat.toString())
+      params.append('origin_lng', query.origin.coordinates.lng.toString())
+    }
+  }
+
+  // Destination location (structured)
+  if (query.destination) {
+    if (query.destination.city) params.append('destination_city', query.destination.city)
+    if (query.destination.province) params.append('destination_province', query.destination.province)
+    if (query.destination.address) params.append('destination_address', query.destination.address)
+
+    // Coordinates from Google Places (if available)
+    if (query.destination.coordinates) {
+      params.append('destination_lat', query.destination.coordinates.lat.toString())
+      params.append('destination_lng', query.destination.coordinates.lng.toString())
+    }
+  }
+
+  // Geospatial search radius
+  if (query.origin_radius) params.append('origin_radius', query.origin_radius.toString())
+  if (query.destination_radius) params.append('destination_radius', query.destination_radius.toString())
+
+  // Single departure date (NOT a range)
+  if (query.departure_date) params.append('departure_date', query.departure_date)
 
   // Numeric filters
   if (query.min_seats) params.append('min_seats', query.min_seats.toString())
@@ -59,8 +85,11 @@ export async function searchTrips(query: SearchQuery): Promise<SearchResponse<Se
   // Full-text search
   if (query.q) params.append('q', query.q)
 
-  // Sorting and pagination
+  // NEW: Flexible sorting
   if (query.sort_by) params.append('sort_by', query.sort_by)
+  if (query.sort_order) params.append('sort_order', query.sort_order)
+
+  // Pagination
   if (query.page) params.append('page', query.page.toString())
   if (query.limit) params.append('limit', query.limit.toString())
 

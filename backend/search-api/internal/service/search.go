@@ -96,8 +96,8 @@ func (s *searchService) SearchTrips(ctx context.Context, query *domain.SearchQue
 			Dur("duration_ms", time.Since(startTime)).
 			Msg("Cache hit for search query")
 
-		// Track popular routes asynchronously (fire-and-forget)
-		go s.trackPopularRoute(context.Background(), query.OriginCity, query.DestinationCity)
+		// Track popular routes asynchronously
+		go s.trackPopularRoute(context.Background(), query)
 
 		return cached, nil
 	}
@@ -113,20 +113,15 @@ func (s *searchService) SearchTrips(ctx context.Context, query *domain.SearchQue
 		if err == nil {
 			source = "solr"
 		} else {
-			log.Warn().
-				Err(err).
-				Msg("Solr search failed, falling back to MongoDB")
+			log.Warn().Err(err).Msg("Solr search failed, falling back to MongoDB")
 		}
 	}
 
-	// Step 3: Fallback to MongoDB
+	// Step 3: Fallback to MongoDB (or if geospatial)
 	if trips == nil {
 		trips, total, err = s.searchWithMongoDB(ctx, query)
 		if err != nil {
-			log.Error().
-				Err(err).
-				Interface("query", query).
-				Msg("MongoDB search failed")
+			log.Error().Err(err).Interface("query", query).Msg("MongoDB search failed")
 			return nil, fmt.Errorf("search failed: %w", err)
 		}
 		source = "mongodb"
@@ -140,8 +135,8 @@ func (s *searchService) SearchTrips(ctx context.Context, query *domain.SearchQue
 		log.Warn().Err(err).Msg("Failed to cache search result")
 	}
 
-	// Track popular routes asynchronously (fire-and-forget)
-	go s.trackPopularRoute(context.Background(), query.OriginCity, query.DestinationCity)
+	// Track popular routes asynchronously
+	go s.trackPopularRoute(context.Background(), query)
 
 	log.Info().
 		Str("source", source).
@@ -479,37 +474,68 @@ func (s *searchService) cacheTripData(ctx context.Context, cacheKey string, trip
 
 // searchWithSolr performs search using Apache Solr
 func (s *searchService) searchWithSolr(ctx context.Context, query *domain.SearchQuery) ([]*domain.SearchTrip, int64, error) {
-	// Build simple query string
 	queryStr := "*:*"
 	if query.SearchText != "" {
 		queryStr = fmt.Sprintf("search_text:%s", query.SearchText)
 	}
 
-	// Build filters map
+	// Build filters map (igual que antes)
 	filters := make(map[string]interface{})
 	filters["status"] = "published"
 
-	if query.OriginCity != "" {
-		filters["origin_city"] = query.OriginCity
+	if query.Origin != nil {
+		if query.Origin.City != "" {
+			filters["origin_city"] = query.Origin.City
+		}
+		if query.Origin.Province != "" {
+			filters["origin_province"] = query.Origin.Province
+		}
 	}
-	if query.DestinationCity != "" {
-		filters["destination_city"] = query.DestinationCity
+
+	if query.Destination != nil {
+		if query.Destination.City != "" {
+			filters["destination_city"] = query.Destination.City
+		}
+		if query.Destination.Province != "" {
+			filters["destination_province"] = query.Destination.Province
+		}
 	}
+
+	if query.DepartureDate != nil {
+		startOfDay := query.DepartureDate.Truncate(24 * time.Hour)
+		endOfDay := startOfDay.Add(24 * time.Hour)
+		filters["departure_datetime"] = fmt.Sprintf("[%s TO %s]",
+			startOfDay.Format(time.RFC3339),
+			endOfDay.Format(time.RFC3339))
+	}
+
 	if query.MinSeats > 0 {
 		filters["available_seats"] = fmt.Sprintf("[%d TO *]", query.MinSeats)
 	}
 	if query.MaxPrice > 0 {
 		filters["price_per_seat"] = fmt.Sprintf("[* TO %f]", query.MaxPrice)
 	}
+	if query.MinDriverRating > 0 {
+		filters["driver_rating"] = fmt.Sprintf("[%f TO *]", query.MinDriverRating)
+	}
 
-	// Execute Solr search with new simple client
-	docs, total, err := s.solrClient.Search(ctx, queryStr, filters, query.Page, query.Limit)
+	if query.PetsAllowed != nil {
+		filters["pets_allowed"] = *query.PetsAllowed
+	}
+	if query.SmokingAllowed != nil {
+		filters["smoking_allowed"] = *query.SmokingAllowed
+	}
+	if query.MusicAllowed != nil {
+		filters["music_allowed"] = *query.MusicAllowed
+	}
+
+	// ===== NUEVO: Pasar sorting a Solr =====
+	docs, total, err := s.solrClient.Search(ctx, queryStr, filters, query.Page, query.Limit, query.SortBy, query.SortOrder)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// Convert Solr documents to SearchTrip entities
-	// Extract trip IDs and fetch full data from MongoDB for complete details
+	// Extract trip IDs y fetch de MongoDB (igual que antes)
 	tripIDs := make([]string, 0, len(docs))
 	for _, doc := range docs {
 		if id, ok := doc["id"].(string); ok {
@@ -517,17 +543,15 @@ func (s *searchService) searchWithSolr(ctx context.Context, query *domain.Search
 		}
 	}
 
-	// If no results from Solr, return empty
 	if len(tripIDs) == 0 {
 		return []*domain.SearchTrip{}, 0, nil
 	}
 
-	// Fetch trips from MongoDB one by one (TODO: implement batch fetch)
 	trips := make([]*domain.SearchTrip, 0, len(tripIDs))
 	for _, tripID := range tripIDs {
 		trip, err := s.tripRepo.FindByTripID(ctx, tripID)
 		if err != nil {
-			log.Warn().Err(err).Str("trip_id", tripID).Msg("Failed to fetch trip from MongoDB, skipping")
+			log.Warn().Err(err).Str("trip_id", tripID).Msg("Failed to fetch trip, skipping")
 			continue
 		}
 		trips = append(trips, trip)
@@ -539,29 +563,40 @@ func (s *searchService) searchWithSolr(ctx context.Context, query *domain.Search
 // searchWithMongoDB performs search using MongoDB with two-phase strategy:
 // 1. Try exact match first
 // 2. If no results and city filters are present, try partial match
+// searchWithMongoDB con sorting
 func (s *searchService) searchWithMongoDB(ctx context.Context, query *domain.SearchQuery) ([]*domain.SearchTrip, int64, error) {
-	// Phase 1: Build MongoDB filters with exact match
+	// Phase 1: Exact match
 	filters := s.buildMongoFilters(query, false)
 
-	// Execute MongoDB search with exact match
-	trips, total, err := s.tripRepo.Search(ctx, filters, query.Page, query.Limit)
+	// Determine sorting parameters
+	// MongoDB's $near operator automatically sorts by distance, so we skip sorting for geospatial queries
+	sortBy := query.SortBy
+	sortOrder := query.SortOrder
+	if query.IsGeospatial() {
+		sortBy = ""
+		sortOrder = ""
+	}
+
+	trips, total, err := s.tripRepo.Search(ctx, filters, query.Page, query.Limit, sortBy, sortOrder)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// If we have results or no city filters were provided, return the results
-	if total > 0 || (query.OriginCity == "" && query.DestinationCity == "") {
+	// Check if we should try partial match
+	hasOriginCity := query.Origin != nil && query.Origin.City != ""
+	hasDestCity := query.Destination != nil && query.Destination.City != ""
+
+	// If we have results or no city filters, return
+	if total > 0 || (!hasOriginCity && !hasDestCity) {
 		return trips, total, nil
 	}
 
-	// Phase 2: No results with exact match, try partial match on cities
-	log.Debug().
-		Str("origin_city", query.OriginCity).
-		Str("destination_city", query.DestinationCity).
-		Msg("No exact match found, trying partial match on city names")
+	// Phase 2: Partial match
+	log.Debug().Msg("No exact match, trying partial match on city names")
 
 	filtersPartial := s.buildMongoFilters(query, true)
-	trips, total, err = s.tripRepo.Search(ctx, filtersPartial, query.Page, query.Limit)
+
+	trips, total, err = s.tripRepo.Search(ctx, filtersPartial, query.Page, query.Limit, sortBy, sortOrder)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -571,36 +606,132 @@ func (s *searchService) searchWithMongoDB(ctx context.Context, query *domain.Sea
 
 // buildMongoFilters converts SearchQuery to MongoDB filters
 // usePartialMatch: if true, city filters will use regex for prefix matching (case-insensitive)
+// Note: MongoDB $near and other filters cannot be combined on the same field
+// Priority: geospatial filters take precedence over city filters
 func (s *searchService) buildMongoFilters(query *domain.SearchQuery, usePartialMatch bool) map[string]interface{} {
 	filters := make(map[string]interface{})
 
-	// Always filter by published status and available seats
 	filters["status"] = "published"
 	filters["available_seats"] = map[string]interface{}{"$gte": 1}
 
-	// City filters - support both exact and partial matching
-	if query.OriginCity != "" {
+	// Strategy: geospatial PRIORITY, then city filters
+	// Check if Origin has geospatial data
+	hasOriginGeo := query.Origin != nil &&
+		len(query.Origin.Coordinates.Coordinates) == 2 &&
+		query.OriginRadius > 0
+
+	// Check if Destination has geospatial data
+	hasDestGeo := query.Destination != nil &&
+		len(query.Destination.Coordinates.Coordinates) == 2 &&
+		query.DestinationRadius > 0
+
+	// CRITICAL: MongoDB allows only ONE $near per query
+	// If BOTH origin and destination have geospatial filters, use $geoWithin instead
+	useBothGeoWithin := hasOriginGeo && hasDestGeo
+
+	if hasOriginGeo {
+		lat := query.Origin.Coordinates.Lat()
+		lng := query.Origin.Coordinates.Lng()
+
+		// Validate coordinate ranges
+		if lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 {
+			if useBothGeoWithin {
+				// Use $geoWithin when searching BOTH origin and destination
+				// $centerSphere: [center coordinates, radius in radians]
+				// radius in radians = radius in km / Earth radius (6378.1 km)
+				radiusInRadians := float64(query.OriginRadius) / 6378.1
+				filters["origin.coordinates"] = bson.M{
+					"$geoWithin": bson.M{
+						"$centerSphere": []interface{}{
+							[]float64{lng, lat}, // [lng, lat]
+							radiusInRadians,
+						},
+					},
+				}
+			} else {
+				// Use $near when only ONE geospatial filter (sorts by distance)
+				filters["origin.coordinates"] = bson.M{
+					"$near": bson.M{
+						"$geometry": bson.M{
+							"type":        "Point",
+							"coordinates": []float64{lng, lat}, // GeoJSON: [lng, lat]
+						},
+						"$maxDistance": query.OriginRadius * 1000, // km to meters
+					},
+				}
+			}
+		}
+	} else if query.Origin != nil && query.Origin.City != "" {
+		// Use city filter ONLY if no geospatial filter
 		if usePartialMatch {
-			// Partial match: case-insensitive prefix search
 			filters["origin.city"] = bson.M{
-				"$regex":   "^" + regexp.QuoteMeta(query.OriginCity),
+				"$regex":   "^" + regexp.QuoteMeta(query.Origin.City),
 				"$options": "i",
 			}
 		} else {
-			// Exact match
-			filters["origin.city"] = query.OriginCity
+			filters["origin.city"] = query.Origin.City
+		}
+
+		// Province filter (optional refinement)
+		if query.Origin.Province != "" {
+			filters["origin.province"] = query.Origin.Province
 		}
 	}
-	if query.DestinationCity != "" {
+
+	if hasDestGeo {
+		lat := query.Destination.Coordinates.Lat()
+		lng := query.Destination.Coordinates.Lng()
+
+		// Validate coordinate ranges
+		if lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 {
+			if useBothGeoWithin {
+				// Use $geoWithin when searching BOTH origin and destination
+				radiusInRadians := float64(query.DestinationRadius) / 6378.1
+				filters["destination.coordinates"] = bson.M{
+					"$geoWithin": bson.M{
+						"$centerSphere": []interface{}{
+							[]float64{lng, lat}, // [lng, lat]
+							radiusInRadians,
+						},
+					},
+				}
+			} else {
+				// Use $near when only ONE geospatial filter (sorts by distance)
+				filters["destination.coordinates"] = bson.M{
+					"$near": bson.M{
+						"$geometry": bson.M{
+							"type":        "Point",
+							"coordinates": []float64{lng, lat}, // GeoJSON: [lng, lat]
+						},
+						"$maxDistance": query.DestinationRadius * 1000, // km to meters
+					},
+				}
+			}
+		}
+	} else if query.Destination != nil && query.Destination.City != "" {
+		// Use city filter ONLY if no geospatial filter
 		if usePartialMatch {
-			// Partial match: case-insensitive prefix search
 			filters["destination.city"] = bson.M{
-				"$regex":   "^" + regexp.QuoteMeta(query.DestinationCity),
+				"$regex":   "^" + regexp.QuoteMeta(query.Destination.City),
 				"$options": "i",
 			}
 		} else {
-			// Exact match
-			filters["destination.city"] = query.DestinationCity
+			filters["destination.city"] = query.Destination.City
+		}
+
+		// Province filter (optional refinement)
+		if query.Destination.Province != "" {
+			filters["destination.province"] = query.Destination.Province
+		}
+	}
+
+	// Date filter (exact date)
+	if query.DepartureDate != nil {
+		startOfDay := query.DepartureDate.Truncate(24 * time.Hour)
+		endOfDay := startOfDay.Add(24 * time.Hour)
+		filters["departure_datetime"] = bson.M{
+			"$gte": startOfDay,
+			"$lt":  endOfDay,
 		}
 	}
 
@@ -630,18 +761,6 @@ func (s *searchService) buildMongoFilters(query *domain.SearchQuery, usePartialM
 		filters["driver.rating"] = map[string]interface{}{"$gte": query.MinDriverRating}
 	}
 
-	// Date range filter
-	if !query.DateFrom.IsZero() || !query.DateTo.IsZero() {
-		dateFilter := make(map[string]interface{})
-		if !query.DateFrom.IsZero() {
-			dateFilter["$gte"] = query.DateFrom
-		}
-		if !query.DateTo.IsZero() {
-			dateFilter["$lte"] = query.DateTo
-		}
-		filters["departure_datetime"] = dateFilter
-	}
-
 	return filters
 }
 
@@ -662,7 +781,33 @@ func (s *searchService) buildSearchResponse(trips []*domain.SearchTrip, total in
 }
 
 // trackPopularRoute increments search count for a route asynchronously
-func (s *searchService) trackPopularRoute(ctx context.Context, originCity, destinationCity string) {
+// Runs in a goroutine, so includes panic recovery
+func (s *searchService) trackPopularRoute(ctx context.Context, query *domain.SearchQuery) {
+	// Panic recovery to prevent crashing server
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().
+				Interface("panic", r).
+				Msg("Panic recovered in trackPopularRoute")
+		}
+	}()
+
+	// Nil check for query
+	if query == nil {
+		return
+	}
+
+	var originCity, destinationCity string
+
+	// Safe extraction of city names
+	if query.Origin != nil && query.Origin.City != "" {
+		originCity = query.Origin.City
+	}
+	if query.Destination != nil && query.Destination.City != "" {
+		destinationCity = query.Destination.City
+	}
+
+	// Only track if both cities are present
 	if originCity == "" || destinationCity == "" {
 		return
 	}
@@ -692,6 +837,11 @@ func (s *searchService) mapUserToDriver(user *domain.User) domain.Driver {
 
 // BuildSearchText concatenates city names and description for full-text search
 func BuildSearchText(trip *domain.SearchTrip) string {
+	// Nil check for safety
+	if trip == nil {
+		return ""
+	}
+
 	parts := []string{
 		trip.Origin.City,
 		trip.Origin.Province,
