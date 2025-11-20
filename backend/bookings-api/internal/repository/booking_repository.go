@@ -30,6 +30,9 @@ type BookingRepository interface {
 
 	// CancelBooking cancels a booking with a reason
 	CancelBooking(bookingUUID string, reason string) error
+
+	// FindAllWithPagination finds all bookings with pagination and filters (admin only)
+	FindAllWithPagination(page, limit int, statusFilter, tripIDFilter string, passengerIDFilter int64) ([]*dao.Booking, int64, error)
 }
 
 // bookingRepository implements BookingRepository using GORM
@@ -122,4 +125,44 @@ func (r *bookingRepository) CancelBooking(bookingUUID string, reason string) err
 			"cancelled_at":        &now,
 			"cancellation_reason": reason,
 		}).Error
+}
+
+// FindAllWithPagination finds all bookings with pagination and filters (admin only)
+func (r *bookingRepository) FindAllWithPagination(page, limit int, statusFilter, tripIDFilter string, passengerIDFilter int64) ([]*dao.Booking, int64, error) {
+	var bookings []*dao.Booking
+	var total int64
+
+	// Start building query
+	query := r.db.Model(&dao.Booking{})
+
+	// Apply filters
+	if statusFilter != "" {
+		query = query.Where("status = ?", statusFilter)
+	}
+	if tripIDFilter != "" {
+		query = query.Where("trip_id = ?", tripIDFilter)
+	}
+	if passengerIDFilter != 0 {
+		query = query.Where("passenger_id = ?", passengerIDFilter)
+	}
+
+	// Count total records
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Calculate offset for pagination
+	offset := (page - 1) * limit
+
+	// Query bookings with pagination
+	err := query.Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&bookings).Error
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return bookings, total, nil
 }

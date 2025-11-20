@@ -10,6 +10,7 @@ import (
 // UserRepository define las operaciones de acceso a datos para usuarios
 type UserRepository interface {
 	Create(user *dao.UserDAO) error
+	FindAllWithPagination(page, limit int, roleFilter, search string) ([]*dao.UserDAO, int64, error)
 	FindByID(id int64) (*dao.UserDAO, error)
 	FindByEmail(email string) (*dao.UserDAO, error)
 	Update(user *dao.UserDAO) error
@@ -35,6 +36,43 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 
 func (r *userRepository) Create(user *dao.UserDAO) error {
 	return r.db.Create(user).Error
+}
+
+func (r *userRepository) FindAllWithPagination(page, limit int, roleFilter, search string) ([]*dao.UserDAO, int64, error) {
+	var users []*dao.UserDAO
+	var total int64
+
+	query := r.db.Model(&dao.UserDAO{})
+
+	// Filtro por rol
+	if roleFilter != "" {
+		query = query.Where("role = ?", roleFilter)
+	}
+
+	// Búsqueda por email o nombre
+	if search != "" {
+		query = query.Where("email LIKE ? OR name LIKE ? OR lastname LIKE ?",
+			"%"+search+"%", "%"+search+"%", "%"+search+"%")
+	}
+
+	// Contar total antes de paginar
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Aplicar paginación
+	offset := (page - 1) * limit
+	err := query.
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&users).Error
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return users, total, nil
 }
 
 func (r *userRepository) FindByID(id int64) (*dao.UserDAO, error) {

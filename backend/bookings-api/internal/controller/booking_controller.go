@@ -167,3 +167,38 @@ func (bc *BookingController) CancelBooking(c *gin.Context) {
 		"message": "Booking cancelled successfully",
 	})
 }
+
+// GetAllBookings handles GET /api/v1/admin/bookings
+// Lists all bookings in the system with pagination and filters (admin only)
+func (bc *BookingController) GetAllBookings(c *gin.Context) {
+	// Parse pagination and filter parameters
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	status := c.Query("status")       // filter by status (optional)
+	tripID := c.Query("trip_id")      // filter by trip (optional)
+	passengerID, _ := strconv.ParseInt(c.Query("passenger_id"), 10, 64) // filter by passenger (optional)
+
+	// Call service to get all bookings
+	bookings, total, err := bc.bookingService.GetAllBookings(c.Request.Context(), page, limit, status, tripID, passengerID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	// Calculate total pages
+	totalPages := (total + int64(limit) - 1) / int64(limit)
+
+	// Return success response with pagination metadata
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"bookings": bookings,
+			"pagination": gin.H{
+				"page":       page,
+				"limit":      limit,
+				"total":      total,
+				"totalPages": totalPages,
+			},
+		},
+	})
+}

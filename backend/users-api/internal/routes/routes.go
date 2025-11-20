@@ -61,6 +61,16 @@ func SetupRoutes(
 		protected.POST("/change-password", authController.ChangePassword)
 	}
 
+	// ==================== RUTAS ADMIN (requieren JWT + rol admin) ====================
+
+	admin := router.Group("/admin")
+	admin.Use(middleware.AuthMiddleware(authService))
+	admin.Use(middleware.RequireAdminRole())
+	{
+		// Gestión de usuarios (solo admin)
+		admin.GET("/users", userController.GetAllUsers)
+	}
+
 	// ==================== RUTAS INTERNAS (sin autenticación, para comunicación entre servicios) ====================
 
 	internal := router.Group("/internal")

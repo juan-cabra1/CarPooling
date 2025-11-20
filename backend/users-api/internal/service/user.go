@@ -11,6 +11,7 @@ import (
 
 // UserService define las operaciones de gestión de usuarios
 type UserService interface {
+	GetAllUsers(page, limit int, roleFilter, search string) ([]*domain.UserDTO, int64, error)
 	GetUserByID(id int64) (*domain.UserDTO, error)
 	GetUserProfile(id int64) (*domain.UserDTO, error)
 	UpdateUser(id int64, req domain.UpdateUserRequest) (*domain.UserDTO, error)
@@ -24,6 +25,22 @@ type userService struct {
 // NewUserService crea una nueva instancia del servicio de usuarios
 func NewUserService(userRepo repository.UserRepository) UserService {
 	return &userService{userRepo: userRepo}
+}
+
+// GetAllUsers obtiene todos los usuarios con paginación y filtros (solo admin)
+func (s *userService) GetAllUsers(page, limit int, roleFilter, search string) ([]*domain.UserDTO, int64, error) {
+	users, total, err := s.userRepo.FindAllWithPagination(page, limit, roleFilter, search)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Convertir a DTOs
+	userDTOs := make([]*domain.UserDTO, len(users))
+	for i, user := range users {
+		userDTOs[i] = s.convertToDTO(user)
+	}
+
+	return userDTOs, total, nil
 }
 
 // GetUserByID obtiene un usuario por su ID
