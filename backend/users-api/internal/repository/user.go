@@ -23,6 +23,7 @@ type UserRepository interface {
 	SaveEmailVerificationToken(userID int64, token string) error
 	SavePasswordResetToken(userID int64, token string, expiresAt time.Time) error
 	ClearPasswordResetToken(userID int64) error
+	UnverifyEmail(userID int64, email string) error
 }
 
 type userRepository struct {
@@ -164,4 +165,9 @@ func (r *userRepository) ClearPasswordResetToken(userID int64) error {
 			"password_reset_token":   nil,
 			"password_reset_expires": nil,
 		}).Error
+}
+func (r *userRepository) UnverifyEmail(userID int64, email string) error {
+	return r.db.Model(&dao.UserDAO{}).
+		Where("id = ?", userID).
+		Update("email_verified", false).Error
 }

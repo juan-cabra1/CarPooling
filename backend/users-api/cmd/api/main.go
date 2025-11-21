@@ -44,7 +44,7 @@ func main() {
 	// 5. Inicializar servicios
 	emailService := service.NewEmailService(cfg)
 	authService := service.NewAuthService(userRepo, emailService, cfg.JWTSecret)
-	userService := service.NewUserService(userRepo)
+	userService := service.NewUserService(userRepo, emailService)
 	ratingService := service.NewRatingService(ratingRepo, userRepo)
 
 	// 6. Inicializar controladores

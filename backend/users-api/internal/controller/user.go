@@ -15,6 +15,7 @@ type UserController interface {
 	GetMe(c *gin.Context)
 	UpdateUser(c *gin.Context)
 	DeleteUser(c *gin.Context)
+	ForceReauthentication(c *gin.Context)
 }
 
 type userController struct {
@@ -262,5 +263,41 @@ func (ctrl *userController) DeleteUser(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"success": true,
 		"data":    gin.H{"message": "usuario eliminado exitosamente"},
+	})
+}
+
+// ForceReauthentication desverifica el email del usuario y reenvía el email de verificación
+// POST /admin/users/:id/force-reauth (solo admin)
+func (ctrl *userController) ForceReauthentication(c *gin.Context) {
+	// Extraer ID del path
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(400, gin.H{
+			"success": false,
+			"error":   "ID inválido",
+		})
+		return
+	}
+
+	// Forzar re-autenticación
+	if err := ctrl.userService.ForceReauthentication(id); err != nil {
+		if err.Error() == "usuario no encontrado" {
+			c.JSON(404, gin.H{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+		c.JSON(500, gin.H{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"data":    gin.H{"message": "email de verificación enviado exitosamente"},
 	})
 }

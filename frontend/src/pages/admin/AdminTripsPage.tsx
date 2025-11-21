@@ -1,69 +1,101 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Search, Eye, Edit, Trash2, X } from 'lucide-react';
+import { Search, Trash2, AlertTriangle, MapPin, Calendar, User as UserIcon } from 'lucide-react';
 import tripsService from '@/services/tripsService';
+import searchService from '@/services/searchService';
 import type { Trip } from '@/types/trip';
+import type { SearchTrip } from '@/types/search';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/admin/StatusBadge';
+import { getErrorMessage } from '@/services/api';
+
+interface DeleteTripModal {
+  isOpen: boolean;
+  trip: Trip | SearchTrip | null;
+}
 
 export default function AdminTripsPage() {
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [filteredTrips, setFilteredTrips] = useState<Trip[]>([]);
+  const [trips, setTrips] = useState<SearchTrip[]>([]);
+  const [filteredTrips, setFilteredTrips] = useState<SearchTrip[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
+  const [deleteModal, setDeleteModal] = useState<DeleteTripModal>({ isOpen: false, trip: null });
+  const [deletingTripId, setDeletingTripId] = useState<string | null>(null);
 
+  // Load trips on mount and when filters change (with debounce)
   useEffect(() => {
-    loadTrips();
-  }, []);
-
-  useEffect(() => {
-    filterTrips();
-  }, [trips, searchTerm, statusFilter]);
+    const timeoutId = setTimeout(() => {
+      loadTrips();
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, statusFilter]);
 
   const loadTrips = async () => {
     try {
       setLoading(true);
-      const data = await tripsService.getAllTrips();
-      setTrips(data);
+
+      // Use Solr search API for filtering
+      const response = await searchService.searchTrips({
+        q: searchTerm || undefined, // Full-text search on Solr
+        page: 1,
+        limit: 100, // Get all trips for admin
+      });
+
+      let results = response.trips;
+
+      // Apply status filter client-side (Solr doesn't have status filter yet)
+      if (statusFilter !== 'all') {
+        results = results.filter((trip) => trip.status === statusFilter);
+      }
+
+      setTrips(results);
+      setFilteredTrips(results);
+      setTotal(response.total);
     } catch (error) {
       console.error('Error loading trips:', error);
+      // Fallback to direct trips API if Solr fails
+      try {
+        const fallbackData = await tripsService.getAllTrips();
+        setTrips(fallbackData as any);
+        setFilteredTrips(fallbackData as any);
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const filterTrips = () => {
-    let filtered = [...trips];
+  const handleDeleteTrip = async () => {
+    if (!deleteModal.trip) return;
 
-    // Filter by search term (origin or destination city)
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (trip) =>
-          trip.origin.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          trip.destination.city.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    try {
+      // SearchTrip has both 'id' (MongoDB) and 'trip_id' (original trip ID)
+      // We need to use trip_id for the trips-api
+      const tripId = 'trip_id' in deleteModal.trip ? deleteModal.trip.trip_id : deleteModal.trip.id;
+      setDeletingTripId(deleteModal.trip.id);
+      await tripsService.deleteTrip(tripId);
+      setTrips(trips.filter((t) => t.id !== deleteModal.trip!.id));
+      setFilteredTrips(filteredTrips.filter((t) => t.id !== deleteModal.trip!.id));
+      setDeleteModal({ isOpen: false, trip: null });
+      alert('✅ Viaje eliminado exitosamente');
+    } catch (error: any) {
+      console.error('Error deleting trip:', error);
+      const errorMsg = getErrorMessage(error);
+      alert(`❌ Error al eliminar el viaje: ${errorMsg}`);
+    } finally {
+      setDeletingTripId(null);
     }
-
-    // Filter by status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter((trip) => trip.status === statusFilter);
-    }
-
-    setFilteredTrips(filtered);
   };
 
-  const handleDelete = async (tripId: string) => {
-    try {
-      await tripsService.deleteTrip(tripId);
-      setTrips(trips.filter((t) => t.id !== tripId));
-      setDeleteConfirm(null);
-    } catch (error) {
-      console.error('Error deleting trip:', error);
-      alert('Error al eliminar el viaje');
-    }
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('es-AR', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
   };
 
   if (loading) {
@@ -82,7 +114,7 @@ export default function AdminTripsPage() {
           Gestión de Viajes
         </h2>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          {filteredTrips.length} viaje{filteredTrips.length !== 1 ? 's' : ''} encontrado{filteredTrips.length !== 1 ? 's' : ''}
+          Mostrando {filteredTrips.length} viaje{filteredTrips.length !== 1 ? 's' : ''} {total > 0 && `de ${total} total`}
         </p>
       </div>
 
@@ -93,7 +125,7 @@ export default function AdminTripsPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <Input
               type="text"
-              placeholder="Buscar por ciudad..."
+              placeholder="Buscar viajes (ciudad, provincia, descripción)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -175,44 +207,21 @@ export default function AdminTripsPage() {
                       <StatusBadge status={trip.status} />
                     </td>
                     <td className="px-6 py-4 text-right text-sm font-medium">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link to={`/trips/${trip.id}`}>
-                          <Button variant="outline" size="sm">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                        <Link to={`/trips/${trip.id}/edit`}>
-                          <Button variant="outline" size="sm">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                        {deleteConfirm === trip.id ? (
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => handleDelete(trip.id)}
-                            >
-                              Confirmar
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setDeleteConfirm(null)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
+                      <Button
+                        onClick={() => setDeleteModal({ isOpen: true, trip })}
+                        disabled={deletingTripId === trip.id}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                        size="sm"
+                      >
+                        {deletingTripId === trip.id ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
                         ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setDeleteConfirm(trip.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <>
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Eliminar
+                          </>
                         )}
-                      </div>
+                      </Button>
                     </td>
                   </tr>
                 ))
@@ -221,6 +230,71 @@ export default function AdminTripsPage() {
           </table>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal.isOpen && deleteModal.trip && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+                <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Eliminar Viaje
+              </h3>
+            </div>
+
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              ¿Estás seguro de que deseas eliminar este viaje? Esta acción no se puede deshacer.
+            </p>
+
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-6 space-y-2">
+              <div className="flex items-start gap-2">
+                <MapPin className="h-5 w-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium text-gray-900 dark:text-white">
+                    {deleteModal.trip.origin.city} → {deleteModal.trip.destination.city}
+                  </p>
+                  <p className="text-gray-500 dark:text-gray-400">
+                    {deleteModal.trip.origin.province}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  {formatDate(deleteModal.trip.departure_datetime)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <UserIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Conductor: {'driver' in deleteModal.trip && deleteModal.trip.driver
+                    ? `${deleteModal.trip.driver.name} (ID: ${deleteModal.trip.driver.id})`
+                    : `ID: ${'driver_id' in deleteModal.trip ? deleteModal.trip.driver_id : 'N/A'}`}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteModal({ isOpen: false, trip: null })}
+                disabled={deletingTripId !== null}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleDeleteTrip}
+                disabled={deletingTripId !== null}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {deletingTripId ? 'Eliminando...' : 'Eliminar Viaje'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

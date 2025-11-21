@@ -25,7 +25,6 @@ import UnauthorizedPage from '@/pages/UnauthorizedPage'
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage'
 import AdminUsersPage from '@/pages/admin/AdminUsersPage'
 import AdminTripsPage from '@/pages/admin/AdminTripsPage'
-import AdminBookingsPage from '@/pages/admin/AdminBookingsPage'
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -137,7 +136,6 @@ function App() {
             <Route index element={<AdminDashboardPage />} />
             <Route path="users" element={<AdminUsersPage />} />
             <Route path="trips" element={<AdminTripsPage />} />
-            <Route path="bookings" element={<AdminBookingsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

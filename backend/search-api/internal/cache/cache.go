@@ -12,5 +12,6 @@ type Cache interface {
 	Set(ctx context.Context, key string, value string, ttl time.Duration) error
 	Delete(ctx context.Context, key string) error
 	Exists(ctx context.Context, key string) (bool, error)
+	FlushAll(ctx context.Context) error
 	Close() error
 }

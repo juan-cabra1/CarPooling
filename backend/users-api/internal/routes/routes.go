@@ -69,6 +69,7 @@ func SetupRoutes(
 	{
 		// Gestión de usuarios (solo admin)
 		admin.GET("/users", userController.GetAllUsers)
+		admin.POST("/users/:id/force-reauth", userController.ForceReauthentication)
 	}
 
 	// ==================== RUTAS INTERNAS (sin autenticación, para comunicación entre servicios) ====================

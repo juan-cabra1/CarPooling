@@ -1,9 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, Users as UsersIcon, Mail, Phone, Calendar, Shield } from 'lucide-react';
+import { Search, Filter, Users as UsersIcon, Mail, Phone, Calendar, Shield, AlertTriangle, User as UserIcon } from 'lucide-react';
 import adminService from '@/services/adminService';
 import type { User } from '@/types/user';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/admin/StatusBadge';
+import { getErrorMessage } from '@/services/api';
+
+interface ForceReauthModal {
+  isOpen: boolean;
+  user: User | null;
+}
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -13,6 +20,8 @@ export default function AdminUsersPage() {
   const [total, setTotal] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('');
+  const [forceReauthModal, setForceReauthModal] = useState<ForceReauthModal>({ isOpen: false, user: null });
+  const [reauthenticatingUserId, setReauthenticatingUserId] = useState<number | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -44,6 +53,27 @@ export default function AdminUsersPage() {
       month: 'short',
       day: 'numeric',
     });
+  };
+
+  const handleForceReauth = async () => {
+    if (!forceReauthModal.user) return;
+
+    try {
+      setReauthenticatingUserId(forceReauthModal.user.id);
+      // Resend verification email (same as registration flow)
+      await adminService.forceReauthentication(
+        forceReauthModal.user.id,
+        forceReauthModal.user.email
+      );
+      setForceReauthModal({ isOpen: false, user: null });
+      alert('✅ Email de verificación enviado. El usuario debe verificar su email para continuar.');
+    } catch (error: any) {
+      console.error('Error forcing reauth:', error);
+      const errorMsg = getErrorMessage(error);
+      alert(`❌ Error al enviar email de verificación: ${errorMsg}`);
+    } finally {
+      setReauthenticatingUserId(null);
+    }
   };
 
   return (
@@ -142,6 +172,9 @@ export default function AdminUsersPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Registro
                   </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
@@ -222,6 +255,23 @@ export default function AdminUsersPage() {
                         {formatDate(user.created_at)}
                       </div>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <Button
+                        onClick={() => setForceReauthModal({ isOpen: true, user })}
+                        disabled={reauthenticatingUserId === user.id}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                        size="sm"
+                      >
+                        {reauthenticatingUserId === user.id ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                        ) : (
+                          <>
+                            <Shield className="h-4 w-4 mr-1" />
+                            Force Re-auth
+                          </>
+                        )}
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -254,6 +304,69 @@ export default function AdminUsersPage() {
           </div>
         )}
       </Card>
+
+      {/* Force Re-authentication Modal */}
+      {forceReauthModal.isOpen && forceReauthModal.user && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+                <Shield className="h-6 w-6 text-red-600 dark:text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Forzar Re-autenticación
+              </h3>
+            </div>
+
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              ¿Forzar que el usuario se re-autentique? El usuario será deslogueado de todos los dispositivos y deberá verificar su email nuevamente.
+            </p>
+
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-6 space-y-2">
+              <div className="flex items-start gap-2">
+                <UserIcon className="h-5 w-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium text-gray-900 dark:text-white">
+                    {forceReauthModal.user.name} {forceReauthModal.user.lastname}
+                  </p>
+                  <p className="text-gray-500 dark:text-gray-400">
+                    ID: {forceReauthModal.user.id}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  {forceReauthModal.user.email}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Phone className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  {forceReauthModal.user.phone}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setForceReauthModal({ isOpen: false, user: null })}
+                disabled={reauthenticatingUserId !== null}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleForceReauth}
+                disabled={reauthenticatingUserId !== null}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {reauthenticatingUserId ? 'Procesando...' : 'Forzar Re-autenticación'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -32,11 +32,6 @@ const navItems: NavItem[] = [
     name: 'Viajes',
     path: '/admin/trips',
     icon: <Car className="h-5 w-5" />
-  },
-  {
-    name: 'Reservas',
-    path: '/admin/bookings',
-    icon: <Calendar className="h-5 w-5" />
   }
 ];
 

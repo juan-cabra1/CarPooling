@@ -91,10 +91,22 @@ export async function getAllTrips(
   return response.data.data
 }
 
+/**
+ * Force user to re-authenticate by un-verifying and resending email verification
+ * Admin-only operation
+ * @param userId - User ID to force re-auth
+ */
+export async function forceReauthentication(userId: number, email: string): Promise<void> {
+  // Call admin endpoint that will unverify and resend email
+  const response = await apiClient.post(`/admin/users/${userId}/force-reauth`)
+  return response.data
+}
+
 const adminService = {
   getAllUsers,
   getAllBookings,
   getAllTrips,
+  forceReauthentication,
 }
 
 export default adminService
