@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Search, Trash2, AlertTriangle, MapPin, Calendar, User as UserIcon } from 'lucide-react';
+import { Trash2, AlertTriangle, MapPin, Calendar, User as UserIcon } from 'lucide-react';
 import tripsService from '@/services/tripsService';
 import searchService from '@/services/searchService';
 import type { Trip } from '@/types/trip';
 import type { SearchTrip } from '@/types/search';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import StatusBadge from '@/components/admin/StatusBadge';
 import { getErrorMessage } from '@/services/api';
 
@@ -16,52 +15,41 @@ interface DeleteTripModal {
 
 export default function AdminTripsPage() {
   const [trips, setTrips] = useState<SearchTrip[]>([]);
-  const [filteredTrips, setFilteredTrips] = useState<SearchTrip[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [total, setTotal] = useState(0);
   const [deleteModal, setDeleteModal] = useState<DeleteTripModal>({ isOpen: false, trip: null });
   const [deletingTripId, setDeletingTripId] = useState<string | null>(null);
 
-  // Load trips on mount and when filters change (with debounce)
+  // Load trips on mount
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      loadTrips();
-    }, 300);
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm, statusFilter]);
+    loadTrips();
+  }, []);
 
   const loadTrips = async () => {
     try {
       setLoading(true);
 
-      // Use Solr search API for filtering
+      // Use Solr search API to get all trips
       const response = await searchService.searchTrips({
-        q: searchTerm || undefined, // Full-text search on Solr
         page: 1,
         limit: 100, // Get all trips for admin
       });
 
-      let results = response.trips;
+      console.log('✅ Search API Response:', response);
+      console.log('📊 Trips loaded:', response.trips?.length);
+      console.log('📈 Total trips:', response.total);
 
-      // Apply status filter client-side (Solr doesn't have status filter yet)
-      if (statusFilter !== 'all') {
-        results = results.filter((trip) => trip.status === statusFilter);
-      }
-
-      setTrips(results);
-      setFilteredTrips(results);
-      setTotal(response.total);
+      setTrips(response.trips || []);
+      setTotal(response.total || 0);
     } catch (error) {
-      console.error('Error loading trips:', error);
+      console.error('❌ Error loading trips:', error);
       // Fallback to direct trips API if Solr fails
       try {
         const fallbackData = await tripsService.getAllTrips();
+        console.log('🔄 Using fallback data:', fallbackData);
         setTrips(fallbackData as any);
-        setFilteredTrips(fallbackData as any);
       } catch (fallbackError) {
-        console.error('Fallback also failed:', fallbackError);
+        console.error('❌ Fallback also failed:', fallbackError);
       }
     } finally {
       setLoading(false);
@@ -78,7 +66,6 @@ export default function AdminTripsPage() {
       setDeletingTripId(deleteModal.trip.id);
       await tripsService.deleteTrip(tripId);
       setTrips(trips.filter((t) => t.id !== deleteModal.trip!.id));
-      setFilteredTrips(filteredTrips.filter((t) => t.id !== deleteModal.trip!.id));
       setDeleteModal({ isOpen: false, trip: null });
       alert('✅ Viaje eliminado exitosamente');
     } catch (error: any) {
@@ -114,37 +101,10 @@ export default function AdminTripsPage() {
           Gestión de Viajes
         </h2>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Mostrando {filteredTrips.length} viaje{filteredTrips.length !== 1 ? 's' : ''} {total > 0 && `de ${total} total`}
+          Mostrando {trips.length} viaje{trips.length !== 1 ? 's' : ''} {total > 0 && `de ${total} total`}
         </p>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <Input
-              type="text"
-              placeholder="Buscar viajes (ciudad, provincia, descripción)..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
-          >
-            <option value="all">Todos los estados</option>
-            <option value="published">Publicado</option>
-            <option value="in_progress">En Progreso</option>
-            <option value="completed">Completado</option>
-            <option value="cancelled">Cancelado</option>
-          </select>
-        </div>
-      </div>
 
       {/* Trips table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -173,14 +133,14 @@ export default function AdminTripsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
-              {filteredTrips.length === 0 ? (
+              {trips.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                     No se encontraron viajes
                   </td>
                 </tr>
               ) : (
-                filteredTrips.map((trip) => (
+                trips.map((trip) => (
                   <tr key={trip.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900 dark:text-white">
