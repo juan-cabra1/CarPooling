@@ -65,37 +65,52 @@ export interface SearchTrip {
 }
 
 /**
- * Sort options for search results
+ * Sort field options for search results
+ * New flexible format: separate sort_by and sort_order
  */
 export type SearchSortBy =
-  | 'popularity' // Most popular/booked trips
-  | 'price_asc' // Cheapest first
-  | 'price_desc' // Most expensive first
-  | 'date_asc' // Earliest departure first
-  | 'date_desc' // Latest departure first
+  | 'price' // Sort by price_per_seat
+  | 'departure_time' // Sort by departure_datetime
+  | 'rating' // Sort by driver rating
+  | 'popularity' // Sort by popularity_score
+
+/**
+ * Sort order (ascending or descending)
+ */
+export type SearchSortOrder = 'asc' | 'desc'
+
+/**
+ * Location input for structured search
+ * User provides city, province, address
+ * Coordinates extracted from Google Places API
+ */
+export interface LocationInput {
+  city: string
+  province: string
+  address: string
+  coordinates?: {
+    lat: number
+    lng: number
+  }
+}
 
 /**
  * Search query parameters
- * Supports city-based search, geospatial search, and filters
+ * Aligned with refactored backend Location structure
  */
 export interface SearchQuery {
-  // City-based search
-  origin_city?: string
-  destination_city?: string
+  // Structured location search
+  origin?: LocationInput
+  destination?: LocationInput
 
-  // Geospatial search (MongoDB 2dsphere)
-  origin_lat?: number
-  origin_lng?: number
-  origin_radius?: number // Radius in kilometers
-  destination_lat?: number
-  destination_lng?: number
-  destination_radius?: number // Radius in kilometers
+  // Geospatial search radius (MongoDB $near)
+  origin_radius?: number // Radius in kilometers (1-100)
+  destination_radius?: number // Radius in kilometers (1-100)
 
-  // Date range filters
-  date_from?: string // ISO 8601 date
-  date_to?: string // ISO 8601 date
+  // Single departure date (NOT a range)
+  departure_date?: string // ISO 8601 date (YYYY-MM-DD)
 
-  // Filters (Solr)
+  // Filters
   min_seats?: number
   max_price?: number
   pets_allowed?: boolean
@@ -106,8 +121,11 @@ export interface SearchQuery {
   // Full-text search
   q?: string // Search text (cities, descriptions)
 
-  // Sorting and pagination
+  // NEW: Flexible sorting
   sort_by?: SearchSortBy
+  sort_order?: SearchSortOrder
+
+  // Pagination
   page?: number // Default: 1
   limit?: number // Default: 20, max: 100
 }

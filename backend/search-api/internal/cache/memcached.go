@@ -167,3 +167,13 @@ func (m *MemcachedCache) Stats() interface{} {
 	// Para mantener compatibilidad, retornamos nil
 	return nil
 }
+
+// FlushAll elimina todas las keys del cache
+// ADVERTENCIA: Esta operación es agresiva y afecta TODO el cache
+func (m *MemcachedCache) FlushAll(ctx context.Context) error {
+	err := m.client.FlushAll()
+	if err != nil {
+		return fmt.Errorf("error flushing cache: %w", err)
+	}
+	return nil
+}

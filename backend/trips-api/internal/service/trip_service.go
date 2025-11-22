@@ -24,14 +24,14 @@ type TripService interface {
 	// ListTrips lista viajes con filtros y paginación
 	ListTrips(ctx context.Context, filters map[string]interface{}, page, limit int) ([]domain.Trip, int64, error)
 
-	// UpdateTrip actualiza un viaje existente (solo el dueño)
-	UpdateTrip(ctx context.Context, tripID string, userID int64, request domain.UpdateTripRequest) (*domain.Trip, error)
+	// UpdateTrip actualiza un viaje existente (solo el dueño o admin)
+	UpdateTrip(ctx context.Context, tripID string, userID int64, userRole string, request domain.UpdateTripRequest) (*domain.Trip, error)
 
-	// DeleteTrip elimina un viaje (solo el dueño)
-	DeleteTrip(ctx context.Context, tripID string, userID int64) error
+	// DeleteTrip elimina un viaje (solo el dueño o admin)
+	DeleteTrip(ctx context.Context, tripID string, userID int64, userRole string) error
 
-	// CancelTrip cancela un viaje (solo el dueño)
-	CancelTrip(ctx context.Context, tripID string, userID int64, request domain.CancelTripRequest) error
+	// CancelTrip cancela un viaje (solo el dueño o admin)
+	CancelTrip(ctx context.Context, tripID string, userID int64, userRole string, request domain.CancelTripRequest) error
 
 	// ProcessReservationCreated maneja eventos reservation.created
 	// Retorna error solo para fallos de sistema (triggers NACK)
@@ -192,15 +192,15 @@ func (s *tripService) ListTrips(ctx context.Context, filters map[string]interfac
 // - No se puede actualizar si reserved_seats > 0
 // - No se puede cambiar total_seats a menos que reserved_seats
 // - Las fechas deben ser válidas si se proporcionan
-func (s *tripService) UpdateTrip(ctx context.Context, tripID string, userID int64, request domain.UpdateTripRequest) (*domain.Trip, error) {
+func (s *tripService) UpdateTrip(ctx context.Context, tripID string, userID int64, userRole string, request domain.UpdateTripRequest) (*domain.Trip, error) {
 	// Obtener el trip actual
 	trip, err := s.tripRepo.FindByID(ctx, tripID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Validación 1: Solo el dueño puede actualizar
-	if trip.DriverID != userID {
+	// Validación 1: Solo el dueño o admin puede actualizar
+	if userRole != "admin" && trip.DriverID != userID {
 		return nil, domain.ErrUnauthorized
 	}
 
@@ -296,15 +296,15 @@ func (s *tripService) UpdateTrip(ctx context.Context, tripID string, userID int6
 // Acciones:
 // - Publica evento trip.deleted a RabbitMQ para sincronizar con search-api
 // - Elimina el viaje de MongoDB
-func (s *tripService) DeleteTrip(ctx context.Context, tripID string, userID int64) error {
+func (s *tripService) DeleteTrip(ctx context.Context, tripID string, userID int64, userRole string) error {
 	// Obtener el trip para verificar ownership
 	trip, err := s.tripRepo.FindByID(ctx, tripID)
 	if err != nil {
 		return err
 	}
 
-	// Validación: Solo el dueño puede eliminar
-	if trip.DriverID != userID {
+	// Validación: Solo el dueño o admin puede eliminar
+	if userRole != "admin" && trip.DriverID != userID {
 		return domain.ErrUnauthorized
 	}
 
@@ -329,15 +329,15 @@ func (s *tripService) DeleteTrip(ctx context.Context, tripID string, userID int6
 // - Establece status = 'cancelled'
 // - Registra cancelled_at, cancelled_by, cancellation_reason
 // - TODO: Publicar evento trip.cancelled a RabbitMQ (Fase 5)
-func (s *tripService) CancelTrip(ctx context.Context, tripID string, userID int64, request domain.CancelTripRequest) error {
+func (s *tripService) CancelTrip(ctx context.Context, tripID string, userID int64, userRole string, request domain.CancelTripRequest) error {
 	// Obtener el trip para verificar ownership
 	trip, err := s.tripRepo.FindByID(ctx, tripID)
 	if err != nil {
 		return err
 	}
 
-	// Validación: Solo el dueño puede cancelar
-	if trip.DriverID != userID {
+	// Validación: Solo el dueño o admin puede cancelar
+	if userRole != "admin" && trip.DriverID != userID {
 		return domain.ErrUnauthorized
 	}
 

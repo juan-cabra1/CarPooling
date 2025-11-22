@@ -25,6 +25,9 @@ type BookingService interface {
 	// GetPassengerBookings retrieves all bookings for a passenger with pagination
 	GetPassengerBookings(ctx context.Context, passengerID int64, page, limit int) (*domain.BookingListResponse, error)
 
+	// GetAllBookings retrieves all bookings in the system with pagination and filters (admin only)
+	GetAllBookings(ctx context.Context, page, limit int, statusFilter, tripIDFilter string, passengerIDFilter int64) ([]*domain.BookingResponse, int64, error)
+
 	// CancelBooking cancels a booking (must be passenger or driver)
 	CancelBooking(ctx context.Context, bookingID string, userID int64, reason string) error
 }
@@ -305,4 +308,37 @@ func (s *bookingService) CancelBooking(ctx context.Context, bookingID string, us
 	}
 
 	return nil
+}
+
+// GetAllBookings retrieves all bookings in the system with pagination and filters (admin only)
+func (s *bookingService) GetAllBookings(ctx context.Context, page, limit int, statusFilter, tripIDFilter string, passengerIDFilter int64) ([]*domain.BookingResponse, int64, error) {
+	log.Info().
+		Int("page", page).
+		Int("limit", limit).
+		Str("status_filter", statusFilter).
+		Str("trip_id_filter", tripIDFilter).
+		Int64("passenger_id_filter", passengerIDFilter).
+		Msg("Getting all bookings (admin)")
+
+	// Get bookings with pagination from repository
+	bookings, total, err := s.bookingRepo.FindAllWithPagination(page, limit, statusFilter, tripIDFilter, passengerIDFilter)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msg("Failed to get all bookings")
+		return nil, 0, fmt.Errorf("failed to get all bookings: %w", err)
+	}
+
+	// Convert to response DTOs
+	bookingResponses := make([]*domain.BookingResponse, len(bookings))
+	for i, booking := range bookings {
+		bookingResponses[i] = domain.ToBookingResponse(booking)
+	}
+
+	log.Info().
+		Int64("total", total).
+		Int("returned", len(bookingResponses)).
+		Msg("Successfully retrieved all bookings")
+
+	return bookingResponses, total, nil
 }

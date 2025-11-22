@@ -50,6 +50,18 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       },
+      // Admin routes - Users API
+      '/api/admin/users': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
+      },
+      // Admin routes - Bookings API
+      '/api/admin/bookings': {
+        target: 'http://localhost:8003',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '/api/v1')
+      },
       // Trips API
       '/api/trips': {
         target: 'http://localhost:8002',

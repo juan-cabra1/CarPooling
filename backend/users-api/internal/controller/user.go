@@ -10,10 +10,12 @@ import (
 
 // UserController define la interfaz del controlador de usuarios
 type UserController interface {
+	GetAllUsers(c *gin.Context)
 	GetUserByID(c *gin.Context)
 	GetMe(c *gin.Context)
 	UpdateUser(c *gin.Context)
 	DeleteUser(c *gin.Context)
+	ForceReauthentication(c *gin.Context)
 }
 
 type userController struct {
@@ -23,6 +25,46 @@ type userController struct {
 // NewUserController crea una nueva instancia del controlador de usuarios
 func NewUserController(userService service.UserService) UserController {
 	return &userController{userService: userService}
+}
+
+// GetAllUsers obtiene todos los usuarios (solo admin)
+// GET /admin/users
+func (ctrl *userController) GetAllUsers(c *gin.Context) {
+	// Parsear parámetros de query
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	role := c.Query("role")       // filtro opcional: "user" o "admin"
+	search := c.Query("search")   // búsqueda por email o nombre
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+
+	// Obtener usuarios con paginación
+	users, total, err := ctrl.userService.GetAllUsers(page, limit, role, search)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"data": gin.H{
+			"users": users,
+			"pagination": gin.H{
+				"page":       page,
+				"limit":      limit,
+				"total":      total,
+				"totalPages": (total + int64(limit) - 1) / int64(limit),
+			},
+		},
+	})
 }
 
 // GetUserByID obtiene un usuario por su ID
@@ -115,8 +157,14 @@ func (ctrl *userController) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	// Validar que el usuario solo puede actualizar su propio perfil
-	if authUserID.(int64) != id {
+	// Extraer role del contexto
+	authRole, roleExists := c.Get("role")
+	if !roleExists {
+		authRole = "user" // default
+	}
+
+	// Validar que el usuario puede actualizar: es admin O es su propio perfil
+	if authRole != "admin" && authUserID.(int64) != id {
 		c.JSON(403, gin.H{
 			"success": false,
 			"error":   "no tienes permiso para actualizar este perfil",
@@ -181,8 +229,14 @@ func (ctrl *userController) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	// Validar que el usuario solo puede eliminar su propio perfil
-	if authUserID.(int64) != id {
+	// Extraer role del contexto
+	authRole, roleExists := c.Get("role")
+	if !roleExists {
+		authRole = "user" // default
+	}
+
+	// Validar que el usuario puede eliminar: es admin O es su propio perfil
+	if authRole != "admin" && authUserID.(int64) != id {
 		c.JSON(403, gin.H{
 			"success": false,
 			"error":   "no tienes permiso para eliminar este perfil",
@@ -209,5 +263,41 @@ func (ctrl *userController) DeleteUser(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"success": true,
 		"data":    gin.H{"message": "usuario eliminado exitosamente"},
+	})
+}
+
+// ForceReauthentication desverifica el email del usuario y reenvía el email de verificación
+// POST /admin/users/:id/force-reauth (solo admin)
+func (ctrl *userController) ForceReauthentication(c *gin.Context) {
+	// Extraer ID del path
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(400, gin.H{
+			"success": false,
+			"error":   "ID inválido",
+		})
+		return
+	}
+
+	// Forzar re-autenticación
+	if err := ctrl.userService.ForceReauthentication(id); err != nil {
+		if err.Error() == "usuario no encontrado" {
+			c.JSON(404, gin.H{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+		c.JSON(500, gin.H{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"data":    gin.H{"message": "email de verificación enviado exitosamente"},
 	})
 }

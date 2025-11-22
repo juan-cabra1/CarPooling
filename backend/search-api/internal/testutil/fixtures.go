@@ -58,12 +58,13 @@ func CreateTestSearchTrip(tripID string) *domain.SearchTrip {
 	return trip
 }
 
-// CreateTestLocation creates a test Location
+// CreateTestLocation creates a test Location with NEW GeoJSON format
 func CreateTestLocation(city string, lat, lng float64) domain.Location {
 	return domain.Location{
-		Address:     "Main Street 123, " + city,
 		City:        city,
-		Coordinates: domain.Coordinates{Lat: lat, Lng: lng},
+		Province:    "", // Empty by default, can be set explicitly if needed
+		Address:     "Main Street 123, " + city,
+		Coordinates: domain.NewGeoJSONPoint(lat, lng),
 	}
 }
 
@@ -138,29 +139,38 @@ func CreateTestPopularRoute(originCity, destinationCity string, count int) domai
 	}
 }
 
-// CreateTestSearchQuery creates a test SearchQuery
+// CreateTestSearchQuery creates a test SearchQuery with NEW structure
 func CreateTestSearchQuery() *domain.SearchQuery {
-	minSeats := 1
-	maxPrice := float64(100000)
-	minRating := 4.0
 	petsAllowed := false
 	smokingAllowed := false
 	musicAllowed := true
+	departureDate := time.Now()
 
 	return &domain.SearchQuery{
-		OriginCity:      "Bogotá",
-		DestinationCity: "Medellín",
-		MinSeats:        &minSeats,
-		MaxPrice:        &maxPrice,
-		MinDriverRating: &minRating,
-		PetsAllowed:     &petsAllowed,
-		SmokingAllowed:  &smokingAllowed,
-		MusicAllowed:    &musicAllowed,
-		DateFrom:        time.Now(),
-		DateTo:          time.Now().Add(7 * 24 * time.Hour),
-		Page:            1,
-		Limit:           20,
-		SortBy:          "popularity",
+		Origin: &domain.Location{
+			City:        "Bogotá",
+			Province:    "Cundinamarca",
+			Address:     "Test Address",
+			Coordinates: domain.NewGeoJSONPoint(4.7110, -74.0721),
+		},
+		Destination: &domain.Location{
+			City:        "Medellín",
+			Province:    "Antioquia",
+			Address:     "Test Address",
+			Coordinates: domain.NewGeoJSONPoint(6.2442, -75.5812),
+		},
+		OriginRadius:      0, // No radius by default
+		DestinationRadius: 0,
+		DepartureDate:     &departureDate,
+		MinSeats:          1,
+		MaxPrice:          100000,
+		MinDriverRating:   4.0,
+		PetsAllowed:       &petsAllowed,
+		SmokingAllowed:    &smokingAllowed,
+		MusicAllowed:      &musicAllowed,
+		Page:              1,
+		Limit:             20,
+		SortBy:            "popularity",
 	}
 }
 

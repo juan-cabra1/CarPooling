@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import Layout from '@/components/layout/Layout'
+import AdminLayout from '@/components/admin/AdminLayout'
+import AdminRoute from '@/components/routes/AdminRoute'
 
 // Pages
 import HomePage from '@/pages/HomePage'
@@ -17,6 +19,12 @@ import MyBookingsPage from '@/pages/MyBookingsPage'
 import ProfilePage from '@/pages/ProfilePage'
 import TripDetailPage from '@/pages/TripDetailPage'
 import EditTripPage from '@/pages/EditTripPage'
+import UnauthorizedPage from '@/pages/UnauthorizedPage'
+
+// Admin Pages
+import AdminDashboardPage from '@/pages/admin/AdminDashboardPage'
+import AdminUsersPage from '@/pages/admin/AdminUsersPage'
+import AdminTripsPage from '@/pages/admin/AdminTripsPage'
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -86,6 +94,7 @@ function App() {
             <Route path="forgot-password" element={<ForgotPasswordPage />} />
             <Route path="reset-password" element={<ResetPasswordPage />} />
             <Route path="search" element={<SearchPage />} />
+            <Route path="unauthorized" element={<UnauthorizedPage />} />
 
             {/* Trip routes - More specific routes first */}
             <Route path="trips/:id/edit" element={
@@ -116,6 +125,17 @@ function App() {
                 <ProfilePage />
               </ProtectedRoute>
             } />
+          </Route>
+
+          {/* Admin routes */}
+          <Route path="/admin" element={
+            <AdminRoute>
+              <AdminLayout />
+            </AdminRoute>
+          }>
+            <Route index element={<AdminDashboardPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="trips" element={<AdminTripsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

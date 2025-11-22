@@ -24,7 +24,7 @@ type TripRepository interface {
 	UpdateAvailability(ctx context.Context, id string, availableSeats int) error
 	UpdateAvailabilityByTripID(ctx context.Context, tripID string, availableSeats int, reservedSeats int, status string) error
 	DeleteByTripID(ctx context.Context, tripID string) error
-	Search(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*domain.SearchTrip, int64, error)
+	Search(ctx context.Context, filters map[string]interface{}, page, limit int, sortBy string, sortOrder string) ([]*domain.SearchTrip, int64, error)
 	SearchByLocation(ctx context.Context, lat, lng float64, radiusKm int, additionalFilters map[string]interface{}) ([]*domain.SearchTrip, error)
 	SearchByRoute(ctx context.Context, originCity, destinationCity string, filters map[string]interface{}) ([]*domain.SearchTrip, error)
 }
@@ -167,7 +167,7 @@ func (r *tripRepository) UpdateAvailability(ctx context.Context, id string, avai
 }
 
 // Search performs a generic search with filters and pagination
-func (r *tripRepository) Search(ctx context.Context, filters map[string]interface{}, page, limit int) ([]*domain.SearchTrip, int64, error) {
+func (r *tripRepository) Search(ctx context.Context, filters map[string]interface{}, page, limit int, sortBy string, sortOrder string) ([]*domain.SearchTrip, int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -180,17 +180,47 @@ func (r *tripRepository) Search(ctx context.Context, filters map[string]interfac
 		filter[key] = value
 	}
 
-	// Count total documents
-	total, err := r.collection.CountDocuments(ctx, filter)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to count trips: %w", err)
+	// Check if this is a geospatial query by looking for $near operator
+	// MongoDB's CountDocuments doesn't support $near, so we need different approach
+	var total int64
+	var needsPostCount bool
+
+	// Check origin coordinates for $near
+	if originCoords, ok := filter["origin.coordinates"].(bson.M); ok {
+		if _, hasNear := originCoords["$near"]; hasNear {
+			needsPostCount = true
+		}
+	}
+
+	// Check destination coordinates for $near
+	if !needsPostCount {
+		if destCoords, ok := filter["destination.coordinates"].(bson.M); ok {
+			if _, hasNear := destCoords["$near"]; hasNear {
+				needsPostCount = true
+			}
+		}
+	}
+
+	// For non-geospatial queries, count normally
+	if !needsPostCount {
+		var err error
+		total, err = r.collection.CountDocuments(ctx, filter)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to count trips: %w", err)
+		}
 	}
 
 	// Find documents with pagination
 	findOptions := options.Find().
 		SetSkip(int64(skip)).
-		SetLimit(int64(limit)).
-		SetSort(bson.D{{Key: "departure_datetime", Value: 1}})
+		SetLimit(int64(limit))
+
+	// Only apply sorting if sortBy is provided
+	// For geospatial queries with $near, MongoDB automatically sorts by distance
+	if sortBy != "" {
+		sortBson := r.buildSortOptions(sortBy, sortOrder)
+		findOptions.SetSort(sortBson)
+	}
 
 	cursor, err := r.collection.Find(ctx, filter, findOptions)
 	if err != nil {
@@ -203,12 +233,55 @@ func (r *tripRepository) Search(ctx context.Context, filters map[string]interfac
 		return nil, 0, fmt.Errorf("failed to decode trips: %w", err)
 	}
 
+	// For geospatial queries, count the results after fetching
+	if needsPostCount {
+		total = int64(len(trips))
+	}
+
 	// Return empty slice instead of nil
 	if trips == nil {
 		trips = []*domain.SearchTrip{}
 	}
 
 	return trips, total, nil
+}
+
+// buildSortOptions converts sortBy and sortOrder to MongoDB sort bson.D
+// Supports both flexible format (sortBy + sortOrder) and backward compatible shortcuts
+func (r *tripRepository) buildSortOptions(sortBy string, sortOrder string) bson.D {
+	// Determine sort direction: 1 for ascending, -1 for descending
+	direction := 1 // Default to ascending
+	if sortOrder == "desc" {
+		direction = -1
+	}
+
+	// Handle backward compatibility shortcuts (ignore sortOrder for these)
+	switch sortBy {
+	case "earliest":
+		return bson.D{{Key: "departure_datetime", Value: 1}}
+	case "cheapest":
+		return bson.D{{Key: "price_per_seat", Value: 1}}
+	case "best_rated":
+		return bson.D{{Key: "driver.rating", Value: -1}}
+	}
+
+	// Handle new flexible format (respects sortOrder parameter)
+	var field string
+	switch sortBy {
+	case "price":
+		field = "price_per_seat"
+	case "departure_time":
+		field = "departure_datetime"
+	case "rating":
+		field = "driver.rating"
+	case "popularity":
+		field = "popularity_score"
+	default:
+		// Default to departure_datetime if sortBy is invalid or empty
+		field = "departure_datetime"
+	}
+
+	return bson.D{{Key: field, Value: direction}}
 }
 
 // SearchByLocation performs geospatial search using MongoDB's 2dsphere index

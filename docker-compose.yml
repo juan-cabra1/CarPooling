@@ -40,6 +40,7 @@ services:
       MYSQL_DATABASE: users_db
     volumes:
       - mysql_users_data:/var/lib/mysql
+      - ./backend/users-api/scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
     networks:
       - carpooling-network
     healthcheck:

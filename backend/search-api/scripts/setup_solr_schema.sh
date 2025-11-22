@@ -36,38 +36,28 @@ echo "✅ Solr is accessible"
 echo ""
 
 # ============================================================================
-# Step 2: Delete existing core if it exists (for clean setup)
+# Step 2: Check if core exists (should be created by docker-compose)
 # ============================================================================
-echo "Step 2: Checking if core '${SOLR_CORE}' already exists..."
+echo "Step 2: Checking if core '${SOLR_CORE}' exists..."
 if curl -s "${SOLR_URL}/admin/cores?action=STATUS&core=${SOLR_CORE}" | grep -q "\"${SOLR_CORE}\""; then
-    echo "⚠️  Core '${SOLR_CORE}' already exists. Deleting..."
-    curl -s "${SOLR_URL}/admin/cores?action=UNLOAD&core=${SOLR_CORE}&deleteIndex=true&deleteDataDir=true&deleteInstanceDir=true" > /dev/null
-    echo "✅ Existing core deleted"
+    echo "✅ Core '${SOLR_CORE}' exists"
 else
-    echo "✅ Core does not exist, proceeding with creation"
-fi
-echo ""
-
-# ============================================================================
-# Step 3: Create Solr core
-# ============================================================================
-echo "Step 3: Creating Solr core '${SOLR_CORE}'..."
-curl -s "${SOLR_URL}/admin/cores?action=CREATE&name=${SOLR_CORE}&configSet=_default" > /dev/null
-if [ $? -eq 0 ]; then
-    echo "✅ Core '${SOLR_CORE}' created successfully"
-else
-    echo "❌ ERROR: Failed to create core"
+    echo "❌ ERROR: Core '${SOLR_CORE}' does not exist!"
+    echo ""
+    echo "The core should be automatically created by docker-compose."
+    echo "Please ensure the Solr container was started with:"
+    echo "  docker-compose up -d solr"
+    echo ""
+    echo "If the core still doesn't exist, try restarting the Solr container:"
+    echo "  docker-compose restart solr"
     exit 1
 fi
 echo ""
 
-# Wait a moment for core to initialize
-sleep 2
-
 # ============================================================================
-# Step 4: Define Schema Fields
+# Step 3: Define Schema Fields
 # ============================================================================
-echo "Step 4: Adding schema fields..."
+echo "Step 3: Adding schema fields..."
 
 # Primary identifier
 echo "  Adding field: id (string)"
@@ -179,6 +169,55 @@ curl -X POST -H 'Content-Type: application/json' \
       "type": "string",
       "stored": true,
       "indexed": true
+    }
+  }' > /dev/null 2>&1
+
+# Coordinate fields (for display only - NOT indexed for geospatial search)
+echo "  Adding field: origin_lat (pdouble, stored only)"
+curl -X POST -H 'Content-Type: application/json' \
+  "${SOLR_URL}/${SOLR_CORE}/schema" \
+  -d '{
+    "add-field": {
+      "name": "origin_lat",
+      "type": "pdouble",
+      "stored": true,
+      "indexed": false
+    }
+  }' > /dev/null 2>&1
+
+echo "  Adding field: origin_lng (pdouble, stored only)"
+curl -X POST -H 'Content-Type: application/json' \
+  "${SOLR_URL}/${SOLR_CORE}/schema" \
+  -d '{
+    "add-field": {
+      "name": "origin_lng",
+      "type": "pdouble",
+      "stored": true,
+      "indexed": false
+    }
+  }' > /dev/null 2>&1
+
+echo "  Adding field: destination_lat (pdouble, stored only)"
+curl -X POST -H 'Content-Type: application/json' \
+  "${SOLR_URL}/${SOLR_CORE}/schema" \
+  -d '{
+    "add-field": {
+      "name": "destination_lat",
+      "type": "pdouble",
+      "stored": true,
+      "indexed": false
+    }
+  }' > /dev/null 2>&1
+
+echo "  Adding field: destination_lng (pdouble, stored only)"
+curl -X POST -H 'Content-Type: application/json' \
+  "${SOLR_URL}/${SOLR_CORE}/schema" \
+  -d '{
+    "add-field": {
+      "name": "destination_lng",
+      "type": "pdouble",
+      "stored": true,
+      "indexed": false
     }
   }' > /dev/null 2>&1
 
@@ -409,9 +448,9 @@ echo "✅ All fields added successfully"
 echo ""
 
 # ============================================================================
-# Step 5: Set unique key
+# Step 4: Set unique key
 # ============================================================================
-echo "Step 5: Setting unique key to 'id'..."
+echo "Step 4: Setting unique key to 'id'..."
 curl -X POST -H 'Content-Type: application/json' \
   "${SOLR_URL}/${SOLR_CORE}/schema" \
   -d '{
@@ -427,9 +466,9 @@ echo "✅ Unique key configured"
 echo ""
 
 # ============================================================================
-# Step 6: Test the schema
+# Step 5: Test the schema
 # ============================================================================
-echo "Step 6: Testing schema with a sample query..."
+echo "Step 5: Testing schema with a sample query..."
 RESPONSE=$(curl -s "${SOLR_URL}/${SOLR_CORE}/select?q=*:*&rows=0")
 if echo "$RESPONSE" | grep -q "\"numFound\":0"; then
     echo "✅ Schema is working (empty result set is expected)"

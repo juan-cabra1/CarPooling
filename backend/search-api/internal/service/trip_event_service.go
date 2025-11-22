@@ -376,13 +376,21 @@ func (s *TripEventService) HandleTripDeleted(ctx context.Context, eventID, tripI
 		}
 	}
 
-	// Invalidate cache for this trip
+	// Invalidate ALL cache (including search queries)
+	// We flush the entire cache because Memcached doesn't support pattern-based deletion
+	// This ensures deleted trips don't appear in any cached search results
 	if s.cache != nil {
+		// First, try to delete the specific trip cache
 		cacheKey := fmt.Sprintf("trip:%s", tripID)
 		if err := s.cache.Delete(ctx, cacheKey); err != nil {
-			log.Error().Err(err).Str("cache_key", cacheKey).Msg("Failed to invalidate cache (continuing)")
+			log.Error().Err(err).Str("cache_key", cacheKey).Msg("Failed to delete trip cache (continuing)")
+		}
+
+		// Then, flush all cache to invalidate search results
+		if err := s.cache.FlushAll(ctx); err != nil {
+			log.Error().Err(err).Msg("Failed to flush cache (continuing)")
 		} else {
-			log.Info().Str("cache_key", cacheKey).Msg("Cache invalidated successfully")
+			log.Info().Msg("Cache flushed successfully - all search results invalidated")
 		}
 	}
 

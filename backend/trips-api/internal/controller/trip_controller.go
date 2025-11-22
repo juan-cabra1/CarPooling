@@ -198,6 +198,12 @@ func (ctrl *tripController) UpdateTrip(c *gin.Context) {
 		return
 	}
 
+	// Extraer role del contexto (viene del middleware JWT)
+	userRole, roleExists := c.Get("role")
+	if !roleExists {
+		userRole = "user" // default
+	}
+
 	// Bind request body a UpdateTripRequest
 	var request domain.UpdateTripRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -209,7 +215,7 @@ func (ctrl *tripController) UpdateTrip(c *gin.Context) {
 	}
 
 	// Llamar al servicio (el servicio valida ownership)
-	trip, err := ctrl.tripService.UpdateTrip(c.Request.Context(), tripID, userID.(int64), request)
+	trip, err := ctrl.tripService.UpdateTrip(c.Request.Context(), tripID, userID.(int64), userRole.(string), request)
 	if err != nil {
 		handleServiceError(c, err)
 		return
@@ -239,8 +245,14 @@ func (ctrl *tripController) DeleteTrip(c *gin.Context) {
 		return
 	}
 
+	// Extraer role del contexto (viene del middleware JWT)
+	userRole, roleExists := c.Get("role")
+	if !roleExists {
+		userRole = "user" // default
+	}
+
 	// Llamar al servicio (el servicio valida ownership)
-	err := ctrl.tripService.DeleteTrip(c.Request.Context(), tripID, userID.(int64))
+	err := ctrl.tripService.DeleteTrip(c.Request.Context(), tripID, userID.(int64), userRole.(string))
 	if err != nil {
 		handleServiceError(c, err)
 		return
@@ -270,6 +282,12 @@ func (ctrl *tripController) CancelTrip(c *gin.Context) {
 		return
 	}
 
+	// Extraer role del contexto (viene del middleware JWT)
+	userRole, roleExists := c.Get("role")
+	if !roleExists {
+		userRole = "user" // default
+	}
+
 	// Bind request body a CancelTripRequest
 	var request domain.CancelTripRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -281,7 +299,7 @@ func (ctrl *tripController) CancelTrip(c *gin.Context) {
 	}
 
 	// Llamar al servicio (el servicio valida ownership)
-	err := ctrl.tripService.CancelTrip(c.Request.Context(), tripID, userID.(int64), request)
+	err := ctrl.tripService.CancelTrip(c.Request.Context(), tripID, userID.(int64), userRole.(string), request)
 	if err != nil {
 		handleServiceError(c, err)
 		return

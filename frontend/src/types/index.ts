@@ -68,6 +68,8 @@ export type {
   Driver,
   SearchTrip,
   SearchSortBy,
+  SearchSortOrder,
+  LocationInput,
   SearchQuery,
   SearchResponse,
   PopularRoute,

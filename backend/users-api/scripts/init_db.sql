@@ -1,7 +1,5 @@
--- Crear base de datos si no existe
-CREATE DATABASE IF NOT EXISTS carpooling_users CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
-USE carpooling_users;
+-- Usar la base de datos creada por Docker (users_db)
+USE users_db;
 
 -- Tabla de usuarios
 CREATE TABLE IF NOT EXISTS users (
@@ -49,3 +47,33 @@ CREATE TABLE IF NOT EXISTS ratings (
     CONSTRAINT fk_ratings_rater FOREIGN KEY (rater_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_ratings_rated_user FOREIGN KEY (rated_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Insertar usuario administrador inicial
+-- Email: admin@carpooling.com
+-- Password: admin123! (CAMBIAR EN PRODUCCIÓN)
+-- Hash generado con bcrypt cost 10
+INSERT INTO users (
+    email,
+    email_verified,
+    name,
+    lastname,
+    password_hash,
+    role,
+    phone,
+    street,
+    number,
+    sex,
+    birthdate
+) VALUES (
+    'admin@admin.com',
+    TRUE,
+    'Administrador',
+    'Sistema',
+    '$2a$10$hS/B/Jctte1MfYFfFEySjOI4V8UhDYyqp189mWHrHtEeh2RSQA6Te',  -- Password: admin123!
+    'admin',
+    '0000000000',
+    'N/A',
+    0,
+    'otro',
+    '1990-01-01'
+) ON DUPLICATE KEY UPDATE email=email;  -- Evita error si ya existe

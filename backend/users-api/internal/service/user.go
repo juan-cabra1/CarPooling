@@ -11,19 +11,41 @@ import (
 
 // UserService define las operaciones de gestión de usuarios
 type UserService interface {
+	GetAllUsers(page, limit int, roleFilter, search string) ([]*domain.UserDTO, int64, error)
 	GetUserByID(id int64) (*domain.UserDTO, error)
 	GetUserProfile(id int64) (*domain.UserDTO, error)
 	UpdateUser(id int64, req domain.UpdateUserRequest) (*domain.UserDTO, error)
 	DeleteUser(id int64) error
+	ForceReauthentication(id int64) error
 }
 
 type userService struct {
-	userRepo repository.UserRepository
+	userRepo     repository.UserRepository
+	emailService EmailService
 }
 
 // NewUserService crea una nueva instancia del servicio de usuarios
-func NewUserService(userRepo repository.UserRepository) UserService {
-	return &userService{userRepo: userRepo}
+func NewUserService(userRepo repository.UserRepository, emailService EmailService) UserService {
+	return &userService{
+		userRepo:     userRepo,
+		emailService: emailService,
+	}
+}
+
+// GetAllUsers obtiene todos los usuarios con paginación y filtros (solo admin)
+func (s *userService) GetAllUsers(page, limit int, roleFilter, search string) ([]*domain.UserDTO, int64, error) {
+	users, total, err := s.userRepo.FindAllWithPagination(page, limit, roleFilter, search)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Convertir a DTOs
+	userDTOs := make([]*domain.UserDTO, len(users))
+	for i, user := range users {
+		userDTOs[i] = s.convertToDTO(user)
+	}
+
+	return userDTOs, total, nil
 }
 
 // GetUserByID obtiene un usuario por su ID
@@ -95,6 +117,43 @@ func (s *userService) DeleteUser(id int64) error {
 	}
 
 	return s.userRepo.Delete(id)
+}
+
+// ForceReauthentication desverifica el email y reenvía el email de verificación
+func (s *userService) ForceReauthentication(id int64) error {
+	// Verificar que el usuario existe
+	user, err := s.userRepo.FindByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("usuario no encontrado")
+		}
+		return err
+	}
+
+	// Generar nuevo token de verificación
+	token, err := s.emailService.GenerateToken()
+	if err != nil {
+		return err
+	}
+
+	// Guardar nuevo token y desverificar email
+	if err := s.userRepo.SaveEmailVerificationToken(id, token); err != nil {
+		return err
+	}
+
+	if err := s.userRepo.UnverifyEmail(id, user.Email); err != nil {
+		return err
+	}
+
+	// Enviar email de forma asíncrona
+	go func() {
+		if err := s.emailService.SendVerificationEmail(user.Email, token); err != nil {
+			// El error ya está logueado en emailService
+			return
+		}
+	}()
+
+	return nil
 }
 
 // convertToDTO convierte un UserDAO a UserDTO

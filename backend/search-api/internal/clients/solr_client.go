@@ -24,17 +24,21 @@ type SolrClient struct {
 type SolrDocument struct {
 	ID string `json:"id"`
 
-	// Driver information (arrays for Solr multi-valued fields)
+	// Driver information
 	DriverID         []int64   `json:"driver_id"`
 	DriverName       []string  `json:"driver_name"`
 	DriverRating     []float64 `json:"driver_rating"`
 	DriverTotalTrips []int     `json:"driver_total_trips"`
 
 	// Location information
-	OriginCity        []string `json:"origin_city"`
-	OriginProvince    []string `json:"origin_province"`
-	DestinationCity   []string `json:"destination_city"`
-	DestinationProvince []string `json:"destination_province"`
+	OriginCity          []string  `json:"origin_city"`
+	OriginProvince      []string  `json:"origin_province"`
+	OriginLat           []float64 `json:"origin_lat"`
+	OriginLng           []float64 `json:"origin_lng"`
+	DestinationCity     []string  `json:"destination_city"`
+	DestinationProvince []string  `json:"destination_province"`
+	DestinationLat      []float64 `json:"destination_lat"`
+	DestinationLng      []float64 `json:"destination_lng"`
 
 	// Trip timing
 	DepartureDatetime        []string `json:"departure_datetime"`
@@ -157,7 +161,7 @@ func (s *SolrClient) Index(ctx context.Context, trip *domain.SearchTrip) error {
 // Search performs a search query in Solr with filters, using two-phase strategy:
 // 1. Try exact match first
 // 2. If no results and city filters are present, try partial match
-func (s *SolrClient) Search(ctx context.Context, query string, filters map[string]interface{}, page int, limit int) ([]map[string]interface{}, int, error) {
+func (s *SolrClient) Search(ctx context.Context, query string, filters map[string]interface{}, page int, limit int, sortBy string, sortOrder string) ([]map[string]interface{}, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -175,7 +179,7 @@ func (s *SolrClient) Search(ctx context.Context, query string, filters map[strin
 	}
 
 	// Phase 1: Try exact match first
-	docs, total, err := s.searchWithFilters(ctx, query, filters, page, limit, false)
+	docs, total, err := s.searchWithFilters(ctx, query, filters, page, limit, false, sortBy, sortOrder)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -187,7 +191,7 @@ func (s *SolrClient) Search(ctx context.Context, query string, filters map[strin
 
 	// Phase 2: No results with exact match, try partial match on cities
 	log.Debug().Msg("No exact match found in Solr, trying partial match on city names")
-	docs, total, err = s.searchWithFilters(ctx, query, filters, page, limit, true)
+	docs, total, err = s.searchWithFilters(ctx, query, filters, page, limit, true, sortBy, sortOrder)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -196,7 +200,7 @@ func (s *SolrClient) Search(ctx context.Context, query string, filters map[strin
 }
 
 // searchWithFilters performs the actual Solr search with specified match type
-func (s *SolrClient) searchWithFilters(ctx context.Context, query string, filters map[string]interface{}, page int, limit int, usePartialMatch bool) ([]map[string]interface{}, int, error) {
+func (s *SolrClient) searchWithFilters(ctx context.Context, query string, filters map[string]interface{}, page int, limit int, usePartialMatch bool, sortBy string, sortOrder string) ([]map[string]interface{}, int, error) {
 	// Calculate offset
 	start := (page - 1) * limit
 
@@ -213,6 +217,11 @@ func (s *SolrClient) searchWithFilters(ctx context.Context, query string, filter
 	params.Set("wt", "json")
 	params.Set("start", fmt.Sprintf("%d", start))
 	params.Set("rows", fmt.Sprintf("%d", limit))
+
+	// Add sorting
+	if sortField, sortDir := s.buildSortParam(sortBy, sortOrder); sortField != "" {
+		params.Set("sort", fmt.Sprintf("%s %s", sortField, sortDir))
+	}
 
 	// Add filters
 	if len(filters) > 0 {
@@ -257,6 +266,7 @@ func (s *SolrClient) searchWithFilters(ctx context.Context, query string, filter
 		Int("num_found", solrResp.Response.NumFound).
 		Int("returned", len(docs)).
 		Bool("partial_match", usePartialMatch).
+		Str("sort", fmt.Sprintf("%s %s", sortBy, sortOrder)).
 		Msg("Solr search completed successfully")
 
 	return docs, solrResp.Response.NumFound, nil
@@ -333,36 +343,111 @@ func (s *SolrClient) Ping(ctx context.Context) error {
 }
 
 // Helper: mapTripToSolrDocument converts SearchTrip to SolrDocument
+// Only indexes non-empty fields to prevent Solr index pollution
 func (s *SolrClient) mapTripToSolrDocument(trip *domain.SearchTrip) SolrDocument {
-	return SolrDocument{
-		ID:                       trip.TripID,
-		DriverID:                 []int64{trip.DriverID},
-		DriverName:               []string{trip.Driver.Name},
-		DriverRating:             []float64{trip.Driver.Rating},
-		DriverTotalTrips:         []int{trip.Driver.TotalTrips},
-		OriginCity:               []string{trip.Origin.City},
-		OriginProvince:           []string{trip.Origin.Province},
-		DestinationCity:          []string{trip.Destination.City},
-		DestinationProvince:      []string{trip.Destination.Province},
-		DepartureDatetime:        []string{s.formatSolrDate(trip.DepartureDatetime)},
-		EstimatedArrivalDatetime: []string{s.formatSolrDate(trip.EstimatedArrivalDatetime)},
-		PricePerSeat:             []float64{trip.PricePerSeat},
-		TotalSeats:               []int{trip.TotalSeats},
-		AvailableSeats:           []int{trip.AvailableSeats},
-		CarBrand:                 []string{trip.Car.Brand},
-		CarModel:                 []string{trip.Car.Model},
-		CarYear:                  []int{trip.Car.Year},
-		CarColor:                 []string{trip.Car.Color},
-		PetsAllowed:              []bool{trip.Preferences.PetsAllowed},
-		SmokingAllowed:           []bool{trip.Preferences.SmokingAllowed},
-		MusicAllowed:             []bool{trip.Preferences.MusicAllowed},
-		Status:                   []string{trip.Status},
-		Description:              []string{trip.Description},
-		SearchText:               []string{trip.SearchText},
-		PopularityScore:          []float64{trip.PopularityScore},
-		CreatedAt:                []string{s.formatSolrDate(trip.CreatedAt)},
-		UpdatedAt:                []string{s.formatSolrDate(trip.UpdatedAt)},
+	doc := SolrDocument{
+		ID: trip.TripID,
 	}
+
+	// Driver information (with validation)
+	if trip.DriverID > 0 {
+		doc.DriverID = []int64{trip.DriverID}
+	}
+	if trip.Driver.Name != "" {
+		doc.DriverName = []string{trip.Driver.Name}
+	}
+	if trip.Driver.Rating > 0 {
+		doc.DriverRating = []float64{trip.Driver.Rating}
+	}
+	if trip.Driver.TotalTrips > 0 {
+		doc.DriverTotalTrips = []int{trip.Driver.TotalTrips}
+	}
+
+	// Origin location (validate non-empty)
+	if trip.Origin.City != "" {
+		doc.OriginCity = []string{trip.Origin.City}
+	}
+	if trip.Origin.Province != "" {
+		doc.OriginProvince = []string{trip.Origin.Province}
+	}
+	// Origin coordinates (for display only)
+	if len(trip.Origin.Coordinates.Coordinates) == 2 {
+		doc.OriginLat = []float64{trip.Origin.Coordinates.Lat()}
+		doc.OriginLng = []float64{trip.Origin.Coordinates.Lng()}
+	}
+
+	// Destination location (validate non-empty)
+	if trip.Destination.City != "" {
+		doc.DestinationCity = []string{trip.Destination.City}
+	}
+	if trip.Destination.Province != "" {
+		doc.DestinationProvince = []string{trip.Destination.Province}
+	}
+	// Destination coordinates (for display only)
+	if len(trip.Destination.Coordinates.Coordinates) == 2 {
+		doc.DestinationLat = []float64{trip.Destination.Coordinates.Lat()}
+		doc.DestinationLng = []float64{trip.Destination.Coordinates.Lng()}
+	}
+
+	// Trip timing (check for non-zero times)
+	if !trip.DepartureDatetime.IsZero() {
+		doc.DepartureDatetime = []string{s.formatSolrDate(trip.DepartureDatetime)}
+	}
+	if !trip.EstimatedArrivalDatetime.IsZero() {
+		doc.EstimatedArrivalDatetime = []string{s.formatSolrDate(trip.EstimatedArrivalDatetime)}
+	}
+
+	// Pricing and availability (always include as they have defaults)
+	if trip.PricePerSeat > 0 {
+		doc.PricePerSeat = []float64{trip.PricePerSeat}
+	}
+	doc.TotalSeats = []int{trip.TotalSeats}
+	doc.AvailableSeats = []int{trip.AvailableSeats}
+
+	// Car information (validate non-empty)
+	if trip.Car.Brand != "" {
+		doc.CarBrand = []string{trip.Car.Brand}
+	}
+	if trip.Car.Model != "" {
+		doc.CarModel = []string{trip.Car.Model}
+	}
+	if trip.Car.Year > 0 {
+		doc.CarYear = []int{trip.Car.Year}
+	}
+	if trip.Car.Color != "" {
+		doc.CarColor = []string{trip.Car.Color}
+	}
+
+	// Preferences (always include as they're boolean)
+	doc.PetsAllowed = []bool{trip.Preferences.PetsAllowed}
+	doc.SmokingAllowed = []bool{trip.Preferences.SmokingAllowed}
+	doc.MusicAllowed = []bool{trip.Preferences.MusicAllowed}
+
+	// Trip details
+	if trip.Status != "" {
+		doc.Status = []string{trip.Status}
+	}
+	if trip.Description != "" {
+		doc.Description = []string{trip.Description}
+	}
+
+	// Search-specific fields
+	if trip.SearchText != "" {
+		doc.SearchText = []string{trip.SearchText}
+	}
+	if trip.PopularityScore > 0 {
+		doc.PopularityScore = []float64{trip.PopularityScore}
+	}
+
+	// Timestamps (check for non-zero)
+	if !trip.CreatedAt.IsZero() {
+		doc.CreatedAt = []string{s.formatSolrDate(trip.CreatedAt)}
+	}
+	if !trip.UpdatedAt.IsZero() {
+		doc.UpdatedAt = []string{s.formatSolrDate(trip.UpdatedAt)}
+	}
+
+	return doc
 }
 
 // Helper: solrDocumentToMap converts SolrDocument to generic map
@@ -390,11 +475,23 @@ func (s *SolrClient) solrDocumentToMap(doc SolrDocument) map[string]interface{} 
 	if len(doc.OriginProvince) > 0 {
 		m["origin_province"] = doc.OriginProvince[0]
 	}
+	if len(doc.OriginLat) > 0 {
+		m["origin_lat"] = doc.OriginLat[0]
+	}
+	if len(doc.OriginLng) > 0 {
+		m["origin_lng"] = doc.OriginLng[0]
+	}
 	if len(doc.DestinationCity) > 0 {
 		m["destination_city"] = doc.DestinationCity[0]
 	}
 	if len(doc.DestinationProvince) > 0 {
 		m["destination_province"] = doc.DestinationProvince[0]
+	}
+	if len(doc.DestinationLat) > 0 {
+		m["destination_lat"] = doc.DestinationLat[0]
+	}
+	if len(doc.DestinationLng) > 0 {
+		m["destination_lng"] = doc.DestinationLng[0]
 	}
 	if len(doc.DepartureDatetime) > 0 {
 		m["departure_datetime"] = doc.DepartureDatetime[0]
@@ -487,4 +584,42 @@ func (s *SolrClient) formatSolrDate(t time.Time) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
+}
+
+func (s *SolrClient) buildSortParam(sortBy string, sortOrder string) (string, string) {
+	// Default sort direction
+	if sortOrder == "" {
+		sortOrder = "asc"
+	}
+
+	// Validate sort order
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "asc"
+	}
+
+	var solrField string
+
+	switch sortBy {
+	case "earliest":
+		solrField = "departure_datetime"
+		sortOrder = "asc"
+	case "cheapest":
+		solrField = "price_per_seat"
+		sortOrder = "asc"
+	case "best_rated":
+		solrField = "driver_rating"
+		sortOrder = "desc"
+	case "popularity":
+		solrField = "popularity_score"
+		sortOrder = "desc"
+	case "":
+		// No sorting
+		return "", ""
+	default:
+		// Unknown sort option, default to departure date
+		solrField = "departure_datetime"
+		sortOrder = "asc"
+	}
+
+	return solrField, sortOrder
 }
