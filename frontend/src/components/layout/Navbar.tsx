@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { Search, Plus, Car, Calendar, User, LogOut, ChevronDown } from 'lucide-react'
+import { Search, Plus, Car, Calendar, User, LogOut, ChevronDown, Shield } from 'lucide-react'
 import { IconMenu2, IconX } from '@tabler/icons-react'
 import { motion, useScroll, useMotionValueEvent, AnimatePresence } from 'framer-motion'
 import { useState } from 'react'
@@ -166,6 +166,16 @@ export default function Navbar() {
                       <User className="w-4 h-4" />
                       Perfil
                     </Link>
+                    {user?.role === 'admin' && (
+                      <Link
+                        to="/admin"
+                        onClick={() => setIsProfileMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20"
+                      >
+                        <Shield className="w-4 h-4" />
+                        Panel Admin
+                      </Link>
+                    )}
                     <button
                       onClick={handleLogout}
                       className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
@@ -293,6 +303,17 @@ export default function Navbar() {
                     <User className="w-4 h-4" />
                     Perfil
                   </Link>
+
+                  {user?.role === 'admin' && (
+                    <Link
+                      to="/admin"
+                      onClick={handleMobileMenuClose}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+                    >
+                      <Shield className="w-4 h-4" />
+                      Panel Admin
+                    </Link>
+                  )}
 
                   <button
                     onClick={handleLogout}

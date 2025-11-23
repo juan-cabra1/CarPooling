@@ -77,5 +77,14 @@ func SetupRoutes(
 			bookings.POST("", bookingController.CreateBooking)         // Create new booking
 			bookings.PATCH("/:id/cancel", bookingController.CancelBooking) // Cancel booking
 		}
+
+		// Admin routes - protected by JWT + admin role
+		admin := v1.Group("/admin")
+		admin.Use(middleware.AuthMiddleware(authService)) // JWT authentication
+		admin.Use(middleware.RequireAdminRole())          // Admin role required
+		{
+			// Admin-only endpoints
+			admin.GET("/bookings", bookingController.GetAllBookings) // Get all bookings with filters
+		}
 	}
 }
