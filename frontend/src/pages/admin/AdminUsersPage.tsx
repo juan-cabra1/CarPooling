@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, Users as UsersIcon, Mail, Phone, Calendar, Shield, AlertTriangle, User as UserIcon } from 'lucide-react';
+import { Search, Filter, Users as UsersIcon, Mail, Phone, Calendar, Shield, User as UserIcon } from 'lucide-react';
 import adminService from '@/services/adminService';
 import type { User } from '@/types/user';
 import { Card } from '@/components/ui/card';

@@ -18,9 +18,10 @@ export default function HomePage() {
           page: 1,
           limit: 20,
         })
-        setFeaturedTrips(response.trips)
+        setFeaturedTrips(response?.trips || [])
       } catch (error) {
         console.error('Error fetching featured trips:', error)
+        setFeaturedTrips([]) // Set empty array on error
       } finally {
         setLoading(false)
       }

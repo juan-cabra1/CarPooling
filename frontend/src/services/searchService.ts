@@ -11,7 +11,6 @@ import type {
   SearchTrip,
   GeospatialSearchParams,
   PopularRoute,
-  AutocompleteSuggestion,
   ApiResponse,
 } from '@/types'
 

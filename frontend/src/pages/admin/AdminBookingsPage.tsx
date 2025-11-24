@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, Calendar, User, Car, DollarSign } from 'lucide-react';
+import { Filter, Calendar, User, Car, DollarSign } from 'lucide-react';
 import adminService from '@/services/adminService';
 import type { Booking } from '@/types/booking';
 import { Card } from '@/components/ui/card';

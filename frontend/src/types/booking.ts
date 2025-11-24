@@ -3,6 +3,8 @@
  * Database: MySQL
  */
 
+import type { Trip } from './trip'
+
 /**
  * Booking status values
  */
@@ -19,7 +21,9 @@ export type BookingStatus =
  */
 export interface Booking {
   id: string // UUID (external identifier)
+  booking_uuid?: string // Alternative UUID field name
   trip_id: string // MongoDB ObjectID from trips-api
+  trip?: Trip // Populated trip data (when fetched with trip details)
   passenger_id: number // User ID from users-api
   driver_id?: number // Set after confirmation
   seats_requested: number

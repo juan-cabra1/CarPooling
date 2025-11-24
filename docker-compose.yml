@@ -251,6 +251,41 @@ services:
       retries: 3
       start_period: 40s
 
+  # --------------------------------------------------------------------------
+  # FRONTEND
+  # --------------------------------------------------------------------------
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_USERS_API_URL: http://localhost:8001
+        VITE_TRIPS_API_URL: http://localhost:8002
+        VITE_BOOKINGS_API_URL: http://localhost:8003
+        VITE_SEARCH_API_URL: http://localhost:8004
+    container_name: frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    networks:
+      - carpooling-network
+    depends_on:
+      users-api:
+        condition: service_started
+      trips-api:
+        condition: service_started
+      bookings-api:
+        condition: service_started
+      search-api:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:80/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 networks:
   carpooling-network:
     driver: bridge

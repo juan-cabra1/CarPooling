@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Trash2, AlertTriangle, MapPin, Calendar, User as UserIcon } from 'lucide-react';
 import tripsService from '@/services/tripsService';
+import adminService from '@/services/adminService';
 import searchService from '@/services/searchService';
 import type { Trip } from '@/types/trip';
 import type { SearchTrip } from '@/types/search';
@@ -45,9 +46,9 @@ export default function AdminTripsPage() {
       console.error('❌ Error loading trips:', error);
       // Fallback to direct trips API if Solr fails
       try {
-        const fallbackData = await tripsService.getAllTrips();
+        const fallbackData = await adminService.getAllTrips();
         console.log('🔄 Using fallback data:', fallbackData);
-        setTrips(fallbackData as any);
+        setTrips(fallbackData.trips as any);
       } catch (fallbackError) {
         console.error('❌ Fallback also failed:', fallbackError);
       }

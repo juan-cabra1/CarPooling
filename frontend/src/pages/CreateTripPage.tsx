@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/card'
 import { LocationInput } from '@/components/search'
 import { tripsService, getErrorMessage } from '@/services'
-import type { CreateTripRequest, LocationInput as LocationInputType, Car as CarType, Preferences } from '@/types'
+import type { CreateTripRequest, LocationInput as LocationInputType } from '@/types'
 
 export default function CreateTripPage() {
   const navigate = useNavigate()

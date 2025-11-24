@@ -16,7 +16,7 @@ import { useAuth } from '@/context/AuthContext'
 import type { Booking } from '@/types'
 
 export default function MyBookingsPage() {
-  const { user } = useAuth()
+  const { } = useAuth()
   const location = useLocation()
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)

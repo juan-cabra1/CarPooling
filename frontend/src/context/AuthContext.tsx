@@ -4,7 +4,7 @@
  * Delegates all logic to authService (no duplication)
  */
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import type { User, LoginCredentials, RegisterData } from '@/types'
 import { authService } from '@/services'
 
@@ -61,8 +61,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * @throws Error if registration fails
    */
   const register = async (data: RegisterData) => {
-    const response = await authService.register(data)
-    setUser(response.user)
+    const user = await authService.register(data)
+    setUser(user)
   }
 
   /**
