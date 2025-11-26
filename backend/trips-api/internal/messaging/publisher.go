@@ -36,6 +36,7 @@ type Publisher interface {
 	PublishTripDeleted(ctx context.Context, trip *domain.Trip, deletedBy int64, reason string)
 	PublishReservationFailure(ctx context.Context, reservationID, tripID, reason string, availableSeats int)
 	PublishReservationConfirmation(ctx context.Context, reservationID, tripID string, passengerID, driverID int64, seatsReserved int, totalPrice float64, availableSeats int)
+	PublishChatMessage(tripID string, userID int64, message string) error
 	Close() error
 }
 
