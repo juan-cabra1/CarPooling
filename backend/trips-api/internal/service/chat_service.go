@@ -22,14 +22,14 @@ type ChatService interface {
 type chatService struct {
 	messageRepo repository.MessageRepository
 	tripRepo    repository.TripRepository
-	publisher   *messaging.Publisher
+	publisher   messaging.Publisher
 }
 
 // NewChatService creates a new chat service instance
 func NewChatService(
 	messageRepo repository.MessageRepository,
 	tripRepo repository.TripRepository,
-	publisher *messaging.Publisher,
+	publisher messaging.Publisher,
 ) ChatService {
 	return &chatService{
 		messageRepo: messageRepo,
