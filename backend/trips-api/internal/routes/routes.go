@@ -9,7 +9,7 @@ import (
 )
 
 // SetupRoutes configura todas las rutas de la aplicación
-func SetupRoutes(router *gin.Engine, tripController controller.TripController, jwtMiddleware gin.HandlerFunc) {
+func SetupRoutes(router *gin.Engine, tripController controller.TripController, chatController *controller.ChatController, jwtMiddleware gin.HandlerFunc) {
 	// Health check endpoint
 	router.GET("/health", healthCheck)
 
@@ -25,6 +25,10 @@ func SetupRoutes(router *gin.Engine, tripController controller.TripController, j
 		protected.PUT("/:id", tripController.UpdateTrip)
 		protected.PATCH("/:id", tripController.UpdateTrip)
 		protected.DELETE("/:id", tripController.DeleteTrip)
+
+		// Chat routes (protected - requires authentication)
+		protected.POST("/:id/messages", chatController.SendMessage)
+		protected.GET("/:id/messages", chatController.GetMessages)
 	}
 }
 

@@ -53,6 +53,7 @@ func main() {
 	// 🔌 Capa de datos: maneja operaciones con MongoDB
 	tripsRepo := repository.NewTripRepository(db)
 	eventsRepo := repository.NewEventRepository(db)
+	messageRepo := repository.NewMessageRepository(db)
 	log.Println("✅ Repositories initialized")
 
 	// 🌐 Capa de clientes HTTP externos
@@ -70,6 +71,7 @@ func main() {
 	// 📦 Capa de servicios: lógica de negocio
 	idempotencyService := service.NewIdempotencyService(eventsRepo)
 	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient, publisher)
+	chatService := service.NewChatService(messageRepo, tripsRepo, publisher)
 	log.Println("✅ Services initialized")
 
 	// 📥 Inicializar RabbitMQ consumer
@@ -100,6 +102,7 @@ func main() {
 	// 🎮 Capa de controladores: HTTP handlers
 	authService := service.NewAuthService(cfg.JWTSecret)
 	tripController := controller.NewTripController(tripService)
+	chatController := controller.NewChatController(chatService)
 	log.Println("✅ Controllers initialized")
 
 	// 🌐 Configurar router HTTP con Gin
@@ -109,7 +112,7 @@ func main() {
 	jwtMiddleware := middleware.AuthMiddleware(authService)
 
 	// 🚦 Configurar rutas de la aplicación
-	routes.SetupRoutes(router, tripController, jwtMiddleware)
+	routes.SetupRoutes(router, tripController, chatController, jwtMiddleware)
 	log.Println("✅ Routes configured")
 
 	// Configuración del server HTTP con timeouts

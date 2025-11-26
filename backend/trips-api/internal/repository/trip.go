@@ -21,6 +21,7 @@ type TripRepository interface {
 	Delete(ctx context.Context, id string) error
 	UpdateAvailability(ctx context.Context, tripID string, seatsDelta int, expectedVersion int) error
 	Cancel(ctx context.Context, id string, cancelledBy int64, reason string) error
+	UpdateLastActivity(ctx context.Context, tripID string, timestamp time.Time) error
 }
 
 type tripRepository struct {
@@ -266,6 +267,32 @@ func (r *tripRepository) Cancel(ctx context.Context, id string, cancelledBy int6
 
 	if result.MatchedCount == 0 {
 		return domain.ErrTripNotFound
+	}
+
+	return nil
+}
+
+// UpdateLastActivity updates the last activity timestamp for a trip
+// Used to track when the trip had its last interaction (e.g., new chat message)
+func (r *tripRepository) UpdateLastActivity(ctx context.Context, tripID string, timestamp time.Time) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	objectID, err := primitive.ObjectIDFromHex(tripID)
+	if err != nil {
+		return fmt.Errorf("invalid trip ID: %w", err)
+	}
+
+	update := bson.M{
+		"$set": bson.M{
+			"last_activity": timestamp,
+			"updated_at":    timestamp,
+		},
+	}
+
+	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": objectID}, update)
+	if err != nil {
+		return fmt.Errorf("failed to update last activity: %w", err)
 	}
 
 	return nil

@@ -251,6 +251,60 @@ func (p *publisher) publish(ctx context.Context, routingKey string, event interf
 		Msg("Event published successfully to RabbitMQ")
 }
 
+// PublishChatMessage publishes a chat message event to RabbitMQ
+// Used for analytics, notifications, and other async processing
+func (p *publisher) PublishChatMessage(tripID string, userID int64, message string) error {
+	ctx := context.Background()
+
+	event := map[string]interface{}{
+		"event_id":   uuid.New().String(),
+		"event_type": "chat.message",
+		"trip_id":    tripID,
+		"user_id":    userID,
+		"message":    message,
+		"timestamp":  time.Now(),
+		"source":     sourceService,
+	}
+
+	body, err := json.Marshal(event)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to marshal chat message event")
+		return err
+	}
+
+	err = p.channel.PublishWithContext(
+		ctx,
+		exchangeName,  // exchange
+		"chat.message", // routing key
+		false,         // mandatory
+		false,         // immediate
+		amqp.Publishing{
+			ContentType:   "application/json",
+			Body:          body,
+			DeliveryMode:  amqp.Persistent,
+			Timestamp:     time.Now(),
+			CorrelationId: getCorrelationID(ctx),
+		},
+	)
+
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("trip_id", tripID).
+			Int64("user_id", userID).
+			Msg("Failed to publish chat message event to RabbitMQ")
+		return err
+	}
+
+	log.Debug().
+		Str("trip_id", tripID).
+		Int64("user_id", userID).
+		Str("routing_key", "chat.message").
+		Msg("Chat message event published successfully to RabbitMQ")
+
+	return nil
+}
+
 // Close cierra el canal y la conexión de RabbitMQ
 func (p *publisher) Close() error {
 	if p.channel != nil {
