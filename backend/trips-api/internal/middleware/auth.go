@@ -52,6 +52,10 @@ func AuthMiddleware(authService service.AuthService) gin.HandlerFunc {
 			c.Set("user_id", int64(claims["user_id"].(float64)))
 			c.Set("email", claims["email"].(string))
 			c.Set("role", claims["role"].(string))
+			// Extraer nombre si está disponible (para chat y otras funciones)
+			if name, ok := claims["name"].(string); ok {
+				c.Set("user_name", name)
+			}
 		} else {
 			c.JSON(401, gin.H{
 				"success": false,

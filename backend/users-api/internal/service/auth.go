@@ -20,7 +20,7 @@ type AuthService interface {
 
 	// JWT
 	ValidateToken(tokenString string) (*jwt.Token, error)
-	GenerateJWT(userID int64, email, role string) (string, error)
+	GenerateJWT(userID int64, email, role, name string) (string, error)
 
 	// Verificación de email
 	VerifyEmail(token string) error
@@ -134,8 +134,9 @@ func (s *authService) Login(req domain.LoginRequest) (*domain.LoginResponse, err
 		return nil, errors.New("debes verificar tu correo electrónico antes de iniciar sesión. Revisa tu bandeja de entrada")
 	}
 
-	// Generar JWT
-	token, err := s.GenerateJWT(user.ID, user.Email, user.Role)
+	// Generar JWT (incluir nombre completo para chat y otras funciones)
+	fullName := user.Name + " " + user.Lastname
+	token, err := s.GenerateJWT(user.ID, user.Email, user.Role, fullName)
 	if err != nil {
 		return nil, err
 	}
@@ -149,11 +150,12 @@ func (s *authService) Login(req domain.LoginRequest) (*domain.LoginResponse, err
 // ==================== JWT ====================
 
 // GenerateJWT genera un token JWT con 24 horas de expiración
-func (s *authService) GenerateJWT(userID int64, email, role string) (string, error) {
+func (s *authService) GenerateJWT(userID int64, email, role, name string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"email":   email,
 		"role":    role,
+		"name":    name,
 		"exp":     time.Now().Add(24 * time.Hour).Unix(), // 24 horas
 	}
 

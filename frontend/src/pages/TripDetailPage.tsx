@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { MapPin, Calendar, Users, DollarSign, Car, ArrowLeft, Edit, Trash2, AlertCircle, Star, User } from 'lucide-react'
+import { MapPin, Calendar, Users, DollarSign, Car, ArrowLeft, Edit, Trash2, AlertCircle, Star, User, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -11,7 +11,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { tripsService, searchService, getErrorMessage } from '@/services'
+import { tripsService, searchService, chatService, getErrorMessage } from '@/services'
+import type { Message } from '@/services'
 import { useAuth } from '@/context/AuthContext'
 import BookingModal from '@/components/BookingModal'
 import type { SearchTrip } from '@/types'
@@ -25,6 +26,12 @@ export default function TripDetailPage() {
   const [error, setError] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
+
+  // Chat states
+  const [messages, setMessages] = useState<Message[]>([])
+  const [newMessage, setNewMessage] = useState('')
+  const [isSending, setIsSending] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (id) {
@@ -106,6 +113,68 @@ export default function TripDetailPage() {
     const config = statusConfig[status] || { label: status, variant: 'outline' as const }
     return <Badge variant={config.variant}>{config.label}</Badge>
   }
+
+  // Chat functions
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  const loadMessages = async () => {
+    if (!id || !user) return
+
+    try {
+      const { messages: msgs } = await chatService.getMessages(id)
+      setMessages(msgs)
+    } catch (error) {
+      console.error('Failed to load messages:', error)
+    }
+  }
+
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || isSending || !id) return
+
+    setIsSending(true)
+    try {
+      await chatService.sendMessage(id, newMessage)
+      setNewMessage('')
+      await loadMessages() // Refresh messages immediately
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      alert('Error al enviar mensaje')
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
+    }
+  }
+
+  // Load messages on mount
+  useEffect(() => {
+    if (user && id) {
+      loadMessages()
+    }
+  }, [id, user])
+
+  // Auto-refresh messages every 5 seconds
+  useEffect(() => {
+    if (!user || !id) return
+
+    const interval = setInterval(() => {
+      loadMessages()
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [id, user])
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
 
   const isOwner = user && trip && trip.driver_id === user.id
 
@@ -407,6 +476,80 @@ export default function TripDetailPage() {
               onClose={() => setIsBookingModalOpen(false)}
               onSuccess={handleBookingSuccess}
             />
+          )}
+
+          {/* Chat Section - Only show for logged-in users */}
+          {user && trip && (
+            <Card className="mt-8">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="w-5 h-5" />
+                  Chat del Viaje
+                </CardTitle>
+                <CardDescription>
+                  Comunícate con el conductor y otros pasajeros
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Messages container */}
+                <div className="border rounded-lg p-4 h-96 overflow-y-auto bg-gray-50 mb-4 space-y-3">
+                  {messages.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">
+                      No hay mensajes aún. ¡Sé el primero en escribir!
+                    </p>
+                  ) : (
+                    messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`p-3 rounded-lg ${
+                          msg.user_id === user?.id
+                            ? 'bg-primary-100 ml-auto max-w-[80%]'
+                            : 'bg-white max-w-[80%] shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-semibold text-sm text-gray-900">
+                            {msg.user_name}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {new Date(msg.created_at).toLocaleTimeString('es-AR', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-gray-800">{msg.message}</p>
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input area */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder="Escribe un mensaje..."
+                    className="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    disabled={isSending}
+                  />
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={!newMessage.trim() || isSending}
+                    size="lg"
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                <p className="text-xs text-gray-500 mt-2">
+                  💡 Los mensajes se actualizan automáticamente cada 5 segundos
+                </p>
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>
