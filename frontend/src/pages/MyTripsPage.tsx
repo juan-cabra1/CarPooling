@@ -171,12 +171,12 @@ export default function MyTripsPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-1">
-                          <CardTitle className="text-xl">
+                          <CardTitle className="text-xl text-gray-900">
                             {trip.origin.city} → {trip.destination.city}
                           </CardTitle>
                           {getStatusBadge(trip.status)}
                         </div>
-                        <CardDescription className="text-base">
+                        <CardDescription className="text-base text-gray-700">
                           {trip.origin.province} → {trip.destination.province}
                         </CardDescription>
                       </div>

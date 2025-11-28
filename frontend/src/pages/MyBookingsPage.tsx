@@ -203,7 +203,7 @@ export default function MyBookingsPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <CardTitle className="text-2xl">
+                          <CardTitle className="text-2xl text-gray-900">
                             {booking.trip ? (
                               <>
                                 {booking.trip.origin.city} → {booking.trip.destination.city}
@@ -215,7 +215,7 @@ export default function MyBookingsPage() {
                           {getStatusBadge(booking.status)}
                         </div>
                         {booking.trip && (
-                          <CardDescription className="text-base">
+                          <CardDescription className="text-base text-gray-700">
                             {booking.trip.origin.province} → {booking.trip.destination.province}
                           </CardDescription>
                         )}
