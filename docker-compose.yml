@@ -1,9 +1,3 @@
-# ============================================================================
-# CarPooling System - Docker Compose
-# ============================================================================
-# Quick start: docker-compose up -d
-# ============================================================================
-
 services:
   # --------------------------------------------------------------------------
   # INFRASTRUCTURE
@@ -129,16 +123,16 @@ services:
       - "8001:8001"
     environment:
       SERVER_PORT: 8001
-      DATABASE_URL: root:${MYSQL_USERS_ROOT_PASSWORD:-rootpass_users}@tcp(mysql-users:3306)/users_db?charset=utf8mb4&parseTime=True&loc=Local
-      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      DATABASE_URL_USERS: root:${MYSQL_USERS_ROOT_PASSWORD}@tcp(mysql-users:3306)/${DB_NAME_USERS}?charset=utf8mb4&parseTime=True&loc=Local
+      JWT_SECRET: ${JWT_SECRET}
       TRIPS_API_URL: http://trips-api:8002
       ENVIRONMENT: ${ENVIRONMENT:-development}
       # SMTP Configuration for email verification
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
       SMTP_FROM: ${SMTP_FROM:-matiasjbocco@gmail.com}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-fzqc ffyv jzuy rsvv}
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      APP_URL: ${APP_URL}
     networks:
       - carpooling-network
     depends_on:
@@ -157,9 +151,9 @@ services:
     ports:
       - "8002:8002"
     environment:
-      MONGO_URI: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-admin123}@mongo:27017/carpooling?authSource=admin
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbit:5672/
-      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      MONGO_URI_TRIPS: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-admin123}@mongo:27017/carpooling?authSource=admin
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbit:5672/
+      JWT_SECRET: ${JWT_SECRET}
       USERS_API_URL: http://users-api:8001
       PORT: 8002
       GIN_MODE: ${GIN_MODE:-debug}
@@ -186,9 +180,9 @@ services:
       - "8003:8003"
     environment:
       SERVER_PORT: 8003
-      DATABASE_URL: root:${MYSQL_BOOKINGS_ROOT_PASSWORD:-rootpass_bookings}@tcp(mysql-bookings:3306)/bookings_db?charset=utf8mb4&parseTime=True&loc=Local
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbit:5672/
-      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      DATABASE_URL_BOOKINGS: root:${MYSQL_BOOKINGS_ROOT_PASSWORD}@tcp(mysql-bookings:3306)/${DB_NAME_BOOKINGS}?charset=utf8mb4&parseTime=True&loc=Local
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbit:5672/
+      JWT_SECRET: ${JWT_SECRET}
       TRIPS_API_URL: http://trips-api:8002
       ENVIRONMENT: ${ENVIRONMENT:-development}
     networks:
@@ -215,18 +209,18 @@ services:
       - "8004:8004"
     environment:
       SERVER_PORT: 8004
-      MONGO_URI: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-admin123}@mongo:27017/carpooling_search?authSource=admin
-      MONGO_DB: carpooling_search
+      MONGO_URI_SEARCH: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DB_SEARCH}?authSource=admin
+      MONGO_DB_SEARCH: ${MONGO_DB_SEARCH}
       SOLR_URL: http://solr:8983/solr
       SOLR_CORE: carpooling_trips
       MEMCACHED_SERVERS: memcached:11211
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbit:5672/
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbit:5672/
       QUEUE_NAME: search.events
       USERS_API_URL: http://users-api:8001
       TRIPS_API_URL: http://trips-api:8002
       HTTP_TIMEOUT: 5s
       HTTP_MAX_RETRIES: 3
-      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      JWT_SECRET: ${JWT_SECRET}
       GIN_MODE: ${GIN_MODE:-debug}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     networks:

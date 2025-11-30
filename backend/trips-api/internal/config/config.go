@@ -1,8 +1,6 @@
 package config
 
 import (
-	"fmt"
-	"log"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -26,63 +24,44 @@ type RabbitMQConfig struct {
 }
 
 // LoadConfig carga la configuración desde variables de entorno
-// Retorna error si alguna variable crítica no está definida
+// Usa fail-fast: panic si alguna variable crítica no está definida
 func LoadConfig() (*Config, error) {
-	// Cargar archivo .env si existe
-	if err := godotenv.Load(); err != nil {
-		log.Println("No se encontró archivo .env, usando variables de entorno del sistema")
-	}
+	// Intentar cargar .env desde la raíz del proyecto
+	// En Docker, las variables vienen del docker-compose, así que esto falla silenciosamente
+	_ = godotenv.Load()
 
 	cfg := &Config{
-		ServerPort: getEnv("SERVER_PORT", "8002"),
+		// Variables CRÍTICAS - Sin defaults, DEBEN existir (fail-fast)
+		JWTSecret: mustGetEnv("JWT_SECRET"),
 		Mongo: MongoConfig{
-			URI: getEnv("MONGO_URI", "mongodb://localhost:27017"),
-			DB:  getEnv("MONGO_DB", "carpooling_trips"),
+			URI: mustGetEnv("MONGO_URI_TRIPS"),
+			DB:  getEnv("MONGO_DB_TRIPS", "carpooling_trips"),
 		},
 		RabbitMQ: RabbitMQConfig{
-			URL: getEnv("RABBITMQ_URL", "amqp://admin:admin@localhost:5672/"),
+			URL: mustGetEnv("RABBITMQ_URL"),
 		},
-		JWTSecret:   getEnv("JWT_SECRET", "your-super-secret-jwt-key-change-this-in-production"),
-		UsersAPIURL: getEnv("USERS_API_URL", "http://localhost:8001"),
-	}
 
-	// Validar configuración crítica
-	if err := cfg.Validate(); err != nil {
-		return nil, err
+		// Variables NO CRÍTICAS - Con defaults razonables
+		ServerPort:  getEnv("SERVER_PORT", "8002"),
+		UsersAPIURL: getEnv("USERS_API_URL", "http://localhost:8001"),
 	}
 
 	return cfg, nil
 }
 
-// Validate verifica que la configuración sea válida
-func (c *Config) Validate() error {
-	if c.Mongo.URI == "" {
-		return fmt.Errorf("MONGO_URI es requerido")
-	}
-
-	if c.Mongo.DB == "" {
-		return fmt.Errorf("MONGO_DB es requerido")
-	}
-
-	if c.RabbitMQ.URL == "" {
-		return fmt.Errorf("RABBITMQ_URL es requerido")
-	}
-
-	if c.JWTSecret == "" || c.JWTSecret == "your-super-secret-jwt-key-change-this-in-production" {
-		log.Println("⚠️  ADVERTENCIA: Usando JWT_SECRET por defecto. Cambiar en producción!")
-	}
-
-	if c.UsersAPIURL == "" {
-		return fmt.Errorf("USERS_API_URL es requerido")
-	}
-
-	return nil
-}
-
-// getEnv obtiene una variable de entorno o retorna un valor por defecto
+// getEnv obtiene variable con fallback (solo para variables NO críticas)
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
 	return defaultValue
+}
+
+// mustGetEnv obtiene variable REQUERIDA o hace panic (fail-fast)
+func mustGetEnv(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		panic("FATAL: Required environment variable " + key + " is not set")
+	}
+	return value
 }
