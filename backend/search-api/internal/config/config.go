@@ -48,15 +48,26 @@ type JWTConfig struct {
 }
 
 func LoadConfig() (*Config, error) {
-	// Load .env file (ignore error if not exists)
+	// Intentar cargar .env desde la raíz del proyecto
+	// En Docker, las variables vienen del docker-compose, así que esto falla silenciosamente
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		ServerPort: getEnv("SERVER_PORT", "8004"),
+		// Variables CRÍTICAS - Sin defaults, DEBEN existir (fail-fast)
 		Mongo: MongoConfig{
-			URI: getEnv("MONGO_URI", "mongodb://localhost:27017"),
-			DB:  getEnv("MONGO_DB", "carpooling_search"),
+			URI: mustGetEnv("MONGO_URI_SEARCH"),
+			DB:  getEnv("MONGO_DB_SEARCH", "carpooling_search"),
 		},
+		RabbitMQ: RabbitMQConfig{
+			URL:       mustGetEnv("RABBITMQ_URL"),
+			QueueName: getEnv("QUEUE_NAME", "search.events"),
+		},
+		JWT: JWTConfig{
+			Secret: mustGetEnv("JWT_SECRET"),
+		},
+
+		// Variables NO CRÍTICAS - Con defaults razonables
+		ServerPort: getEnv("SERVER_PORT", "8004"),
 		Solr: SolrConfig{
 			URL:  getEnv("SOLR_URL", "http://localhost:8983/solr"),
 			Core: getEnv("SOLR_CORE", "carpooling_trips"),
@@ -64,69 +75,15 @@ func LoadConfig() (*Config, error) {
 		Memcached: MemcachedConfig{
 			Servers: getEnvSlice("MEMCACHED_SERVERS", []string{"localhost:11211"}),
 		},
-		RabbitMQ: RabbitMQConfig{
-			URL:       getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
-			QueueName: getEnv("QUEUE_NAME", "search.events"),
-		},
 		HTTP: HTTPConfig{
 			UsersAPIURL: getEnv("USERS_API_URL", "http://localhost:8001"),
 			TripsAPIURL: getEnv("TRIPS_API_URL", "http://localhost:8002"),
 			Timeout:     getEnvInt("HTTP_TIMEOUT", 5),     // 5 seconds default
 			MaxRetries:  getEnvInt("HTTP_MAX_RETRIES", 3), // 3 retries default
 		},
-		JWT: JWTConfig{
-			Secret: getEnv("JWT_SECRET", "dev-secret-key"),
-		},
-	}
-
-	if err := cfg.Validate(); err != nil {
-		return nil, err
 	}
 
 	return cfg, nil
-}
-
-func (c *Config) Validate() error {
-	if c.Mongo.URI == "" {
-		return fmt.Errorf("MONGO_URI is required")
-	}
-	if c.Mongo.DB == "" {
-		return fmt.Errorf("MONGO_DB is required")
-	}
-	if c.ServerPort == "" {
-		return fmt.Errorf("SERVER_PORT is required")
-	}
-	if c.Solr.URL == "" {
-		return fmt.Errorf("SOLR_URL is required")
-	}
-	if c.Solr.Core == "" {
-		return fmt.Errorf("SOLR_CORE is required")
-	}
-	if len(c.Memcached.Servers) == 0 {
-		return fmt.Errorf("MEMCACHED_SERVERS is required")
-	}
-	if c.RabbitMQ.URL == "" {
-		return fmt.Errorf("RABBITMQ_URL is required")
-	}
-	if c.RabbitMQ.QueueName == "" {
-		return fmt.Errorf("QUEUE_NAME is required")
-	}
-	if c.HTTP.UsersAPIURL == "" {
-		return fmt.Errorf("USERS_API_URL is required")
-	}
-	if c.HTTP.TripsAPIURL == "" {
-		return fmt.Errorf("TRIPS_API_URL is required")
-	}
-	if c.HTTP.Timeout <= 0 {
-		return fmt.Errorf("HTTP_TIMEOUT must be positive")
-	}
-	if c.HTTP.MaxRetries < 0 {
-		return fmt.Errorf("HTTP_MAX_RETRIES must be non-negative")
-	}
-	if c.JWT.Secret == "" {
-		return fmt.Errorf("JWT_SECRET is required")
-	}
-	return nil
 }
 
 func getEnv(key, defaultValue string) string {
@@ -134,6 +91,15 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// mustGetEnv obtiene variable REQUERIDA o hace panic (fail-fast)
+func mustGetEnv(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		panic("FATAL: Required environment variable " + key + " is not set")
+	}
+	return value
 }
 
 func getEnvInt(key string, defaultValue int) int {

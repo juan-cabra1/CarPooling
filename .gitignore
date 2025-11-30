@@ -1,10 +1,14 @@
 # Claude Code documentation
 CLAUDE.md
 
-# Environment files
+# Environment files - NEVER commit credentials
 .env
 .env.local
 .env.*.local
+backend/*/.env
+backend/*/.env.local
+*.env
+!.env.example
 
 # Go build artifacts
 *.exe
