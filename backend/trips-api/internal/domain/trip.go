@@ -63,7 +63,3 @@ type UpdateTripRequest struct {
 	Description              *string      `json:"description"`
 }
 
-// CancelTripRequest representa la solicitud para cancelar un viaje
-type CancelTripRequest struct {
-	Reason string `json:"reason" binding:"required"`
-}

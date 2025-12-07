@@ -17,7 +17,6 @@ type TripController interface {
 	ListTrips(c *gin.Context)
 	UpdateTrip(c *gin.Context)
 	DeleteTrip(c *gin.Context)
-	CancelTrip(c *gin.Context)
 }
 
 type tripController struct {
@@ -262,53 +261,6 @@ func (ctrl *tripController) DeleteTrip(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"success": true,
 		"message": "trip deleted successfully",
-	})
-}
-
-// CancelTrip cancela un viaje
-// PATCH /trips/:id/cancel
-// Requiere autenticación (JWT) y ser el dueño del viaje
-func (ctrl *tripController) CancelTrip(c *gin.Context) {
-	// Extraer trip ID del path
-	tripID := c.Param("id")
-
-	// Extraer user_id del contexto
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(401, gin.H{
-			"success": false,
-			"error":   "usuario no autenticado",
-		})
-		return
-	}
-
-	// Extraer role del contexto (viene del middleware JWT)
-	userRole, roleExists := c.Get("role")
-	if !roleExists {
-		userRole = "user" // default
-	}
-
-	// Bind request body a CancelTripRequest
-	var request domain.CancelTripRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(400, gin.H{
-			"success": false,
-			"error":   "datos inválidos: " + err.Error(),
-		})
-		return
-	}
-
-	// Llamar al servicio (el servicio valida ownership)
-	err := ctrl.tripService.CancelTrip(c.Request.Context(), tripID, userID.(int64), userRole.(string), request)
-	if err != nil {
-		handleServiceError(c, err)
-		return
-	}
-
-	// Respuesta exitosa
-	c.JSON(200, gin.H{
-		"success": true,
-		"message": "trip cancelled successfully",
 	})
 }
 

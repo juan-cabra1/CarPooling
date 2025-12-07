@@ -17,6 +17,10 @@ backend/*/.env.local
 *.so
 *.dylib
 bin/
+backend/*/bin/
+backend/*/*.exe
+backend/*/api
+backend/*/*.log
 dist/
 
 # Go test artifacts

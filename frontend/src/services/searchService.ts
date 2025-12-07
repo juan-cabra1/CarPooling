@@ -9,8 +9,6 @@ import type {
   SearchQuery,
   SearchResponse,
   SearchTrip,
-  GeospatialSearchParams,
-  PopularRoute,
   ApiResponse,
 } from '@/types'
 
@@ -100,40 +98,6 @@ export async function searchTrips(query: SearchQuery): Promise<SearchResponse<Se
 }
 
 /**
- * Search trips by geospatial coordinates
- * Public endpoint - finds trips within radius of given coordinates
- * @param params - Latitude, longitude, radius, and optional filters
- * @returns Paginated search results
- * @example
- * const results = await searchService.searchByLocation({
- *   lat: 4.7110,
- *   lng: -74.0721,
- *   radius_km: 10,
- *   min_seats: 2,
- *   max_price: 50000
- * })
- */
-export async function searchByLocation(
-  params: GeospatialSearchParams
-): Promise<SearchResponse<SearchTrip>> {
-  const queryParams = new URLSearchParams()
-
-  queryParams.append('lat', params.lat.toString())
-  queryParams.append('lng', params.lng.toString())
-  queryParams.append('radius_km', params.radius_km.toString())
-
-  if (params.min_seats) queryParams.append('min_seats', params.min_seats.toString())
-  if (params.max_price) queryParams.append('max_price', params.max_price.toString())
-  if (params.page) queryParams.append('page', params.page.toString())
-  if (params.limit) queryParams.append('limit', params.limit.toString())
-
-  const url = `${SEARCH_BASE}/location?${queryParams.toString()}`
-
-  const response = await apiClient.get<ApiResponse<SearchResponse<SearchTrip>>>(url)
-  return response.data.data!
-}
-
-/**
  * Autocomplete city/location search
  * Public endpoint - returns suggestions for location input
  * @param searchQuery - Partial city/location name (min 2 characters)
@@ -158,24 +122,6 @@ export async function autocomplete(
 }
 
 /**
- * Get popular/trending routes
- * Public endpoint - returns most searched origin-destination pairs
- * @param limit - Max number of routes to return (default: 10, max: 50)
- * @returns Array of popular routes with search counts
- * @example
- * const routes = await searchService.getPopularRoutes(10)
- */
-export async function getPopularRoutes(limit = 10): Promise<PopularRoute[]> {
-  const params = new URLSearchParams()
-  params.append('limit', limit.toString())
-
-  const url = `${SEARCH_BASE}/popular-routes?${params.toString()}`
-
-  const response = await apiClient.get<ApiResponse<PopularRoute[]>>(url)
-  return response.data.data!
-}
-
-/**
  * Get trip details from search API
  * Public endpoint - returns denormalized trip with driver info
  * Note: This is different from trips-api GET /trips/:id
@@ -192,8 +138,6 @@ export async function getTripDetails(id: string): Promise<SearchTrip> {
 
 export default {
   searchTrips,
-  searchByLocation,
   autocomplete,
-  getPopularRoutes,
   getTripDetails,
 }

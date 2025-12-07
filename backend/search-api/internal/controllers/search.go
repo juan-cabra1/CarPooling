@@ -123,108 +123,11 @@ func (sc *SearchController) SearchTrips(c *gin.Context) {
 // SearchByLocation handles GET /api/v1/search/location
 // DEPRECATED: Use SearchTrips with origin coordinates instead
 func (sc *SearchController) SearchByLocation(c *gin.Context) {
-	// Parse geospatial parameters
-	latStr := c.Query("lat")
-	lngStr := c.Query("lng")
-	radiusStr := c.Query("radius_km")
-
-	if latStr == "" || lngStr == "" || radiusStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_GEO_PARAMS",
-				"message": "lat, lng, and radius_km are all required",
-			},
-		})
-		return
-	}
-
-	lat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_LATITUDE",
-				"message": "Invalid latitude value",
-			},
-		})
-		return
-	}
-
-	lng, err := strconv.ParseFloat(lngStr, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_LONGITUDE",
-				"message": "Invalid longitude value",
-			},
-		})
-		return
-	}
-
-	radiusKm, err := strconv.Atoi(radiusStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_RADIUS",
-				"message": "Invalid radius_km value",
-			},
-		})
-		return
-	}
-
-	// Build query using new structure
-	query := &domain.SearchQuery{
-		Origin: &domain.Location{
-			Coordinates: domain.NewGeoJSONPoint(lat, lng),
-		},
-		OriginRadius: radiusKm,
-	}
-
-	// Parse additional filters
-	if minSeats := c.Query("min_seats"); minSeats != "" {
-		if val, err := strconv.Atoi(minSeats); err == nil {
-			query.MinSeats = val
-		}
-	}
-	if maxPrice := c.Query("max_price"); maxPrice != "" {
-		if val, err := strconv.ParseFloat(maxPrice, 64); err == nil {
-			query.MaxPrice = val
-		}
-	}
-
-	query.Page = parseInt(c.DefaultQuery("page", "1"))
-	query.Limit = parseInt(c.DefaultQuery("limit", "20"))
-
-	query.SetDefaults()
-	if err := query.Validate(); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_QUERY",
-				"message": err.Error(),
-			},
-		})
-		return
-	}
-
-	// Call unified search service
-	results, err := sc.searchService.SearchTrips(c.Request.Context(), query)
-	if err != nil {
-		c.Error(err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data": gin.H{
-			"trips":       results.Trips,
-			"total":       results.Total,
-			"page":        results.Page,
-			"limit":       results.Limit,
-			"total_pages": results.TotalPages,
+	c.JSON(http.StatusGone, gin.H{
+		"success": false,
+		"error": gin.H{
+			"code":    "ENDPOINT_DEPRECATED",
+			"message": "This endpoint is deprecated. Use /api/v1/search/trips with origin_lat, origin_lng, and origin_radius parameters instead",
 		},
 	})
 }

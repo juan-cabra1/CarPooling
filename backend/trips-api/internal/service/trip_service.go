@@ -30,9 +30,6 @@ type TripService interface {
 	// DeleteTrip elimina un viaje (solo el dueño o admin)
 	DeleteTrip(ctx context.Context, tripID string, userID int64, userRole string) error
 
-	// CancelTrip cancela un viaje (solo el dueño o admin)
-	CancelTrip(ctx context.Context, tripID string, userID int64, userRole string, request domain.CancelTripRequest) error
-
 	// ProcessReservationCreated maneja eventos reservation.created
 	// Retorna error solo para fallos de sistema (triggers NACK)
 	// Retorna nil para fallos de negocio (manejados con evento de compensación)
@@ -315,48 +312,6 @@ func (s *tripService) DeleteTrip(ctx context.Context, tripID string, userID int6
 	// Eliminar del repositorio
 	if err := s.tripRepo.Delete(ctx, tripID); err != nil {
 		return fmt.Errorf("failed to delete trip: %w", err)
-	}
-
-	return nil
-}
-
-// CancelTrip cancela un viaje (solo el dueño)
-//
-// Validaciones:
-// - Solo el dueño puede cancelar (userID == driver_id)
-//
-// Acciones:
-// - Establece status = 'cancelled'
-// - Registra cancelled_at, cancelled_by, cancellation_reason
-// - TODO: Publicar evento trip.cancelled a RabbitMQ (Fase 5)
-func (s *tripService) CancelTrip(ctx context.Context, tripID string, userID int64, userRole string, request domain.CancelTripRequest) error {
-	// Obtener el trip para verificar ownership
-	trip, err := s.tripRepo.FindByID(ctx, tripID)
-	if err != nil {
-		return err
-	}
-
-	// Validación: Solo el dueño o admin puede cancelar
-	if userRole != "admin" && trip.DriverID != userID {
-		return domain.ErrUnauthorized
-	}
-
-	// Cancelar usando el método del repositorio
-	if err := s.tripRepo.Cancel(ctx, tripID, userID, request.Reason); err != nil {
-		log.Error().Err(err).Str("trip_id", tripID).Int64("user_id", userID).Msg("Failed to cancel trip")
-		return fmt.Errorf("failed to cancel trip: %w", err)
-	}
-
-	log.Info().Str("trip_id", tripID).Int64("user_id", userID).Str("reason", request.Reason).Msg("Trip cancelled")
-
-	// Obtener el trip actualizado para publicar el evento con el estado correcto
-	cancelledTrip, err := s.tripRepo.FindByID(ctx, tripID)
-	if err != nil {
-		log.Error().Err(err).Str("trip_id", tripID).Msg("Failed to fetch cancelled trip for event publishing")
-		// No retornamos el error porque el trip ya fue cancelado exitosamente
-	} else {
-		// Publicar evento trip.cancelled (fire-and-forget)
-		s.publisher.PublishTripCancelled(ctx, cancelledTrip, userID, request.Reason)
 	}
 
 	return nil
