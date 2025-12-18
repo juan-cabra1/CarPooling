@@ -1,0 +1,617 @@
+ El plan está completo con:
+
+  1. Estructura del microservicio payments-api con todos los archivos necesarios
+  2. Modelos de base de datos detallados (6 tablas)
+  3. Endpoints REST para pagos, wallet, retiros y OAuth
+  4. Eventos RabbitMQ para comunicación entre servicios
+  5. Cambios en frontend mobile y web
+  6. Configuración Docker Compose
+  7. Orden de implementación en 7 sprints      
+  8. Anexo A: Instrucciones para crear cuenta de Mercado Pago
+  9. Anexo B: Implementación de checkout con Deep Link
+
+  El plan cubre el sistema completo como solicitaste, incluyendo wallet, retiros automáticos, 
+  OAuth para conductores, y dashboard de ganancias.
+
+───────────────────────────────────────────────
+ Ready to code?
+
+ Here is Claude's plan:
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Plan de Implementación: Sistema de Pagos con  
+ Mercado Pago
+
+ Resumen Ejecutivo
+
+ Implementar un sistema de pagos completo para 
+  la plataforma de carpooling, integrado con   
+ Mercado Pago, que permita:
+ - Cobrar a pasajeros al reservar
+ - Dividir pagos automáticamente (85%
+ conductor, 15% plataforma)
+ - Wallet para conductores con historial y     
+ retiros
+ - Liberación de fondos post-viaje
+
+ ---
+ Decisiones de Negocio
+
+ | Aspecto              | Decisión
+                           |
+ |----------------------|--------------------- 
+ --------------------------|
+ | Comisión             | 15% por viaje        
+                           |
+ | Procesador           | Mercado Pago
+                           |
+ | Liberación de fondos | Inmediata si
+ pasajero confirma, auto 2h si no |
+ | Monto mínimo retiro  | Sin mínimo
+                           |
+ | Retiros              | Manual por defecto,  
+ automático opcional       |
+ | Cancelación >48h     | 100% reembolso       
+                           |
+ | Cancelación <48h     | 50% reembolso        
+                           |
+
+ ---
+ FASE 1: Microservicio payments-api (Backend)  
+
+ 1.1 Estructura de Directorios
+
+ backend/payments-api/
+ ├── cmd/api/main.go
+ ├── internal/
+ │   ├── clients/
+ │   │   ├── mercadopago_client.go
+ │   │   ├── bookings_client.go
+ │   │   └── users_client.go
+ │   ├── config/config.go
+ │   ├── controller/
+ │   │   ├── health_controller.go
+ │   │   ├── payment_controller.go
+ │   │   ├── wallet_controller.go
+ │   │   ├── webhook_controller.go
+ │   │   └── seller_controller.go
+ │   ├── dao/
+ │   │   ├── payment.go
+ │   │   ├── wallet.go
+ │   │   ├── wallet_transaction.go
+ │   │   ├── withdrawal.go
+ │   │   ├── seller_account.go
+ │   │   └── processed_event.go
+ │   ├── database/database.go
+ │   ├── domain/
+ │   │   ├── payment.go
+ │   │   ├── wallet.go
+ │   │   ├── errors.go
+ │   │   └── mercadopago.go
+ │   ├── messaging/
+ │   │   ├── consumer.go
+ │   │   ├── handler.go
+ │   │   └── events.go
+ │   ├── middleware/
+ │   │   ├── auth.go
+ │   │   ├── cors.go
+ │   │   └── error.go
+ │   ├── publisher/payment_publisher.go        
+ │   ├── repository/
+ │   │   ├── payment_repository.go
+ │   │   ├── wallet_repository.go
+ │   │   ├── withdrawal_repository.go
+ │   │   ├── seller_repository.go
+ │   │   └── event_repository.go
+ │   ├── routes/routes.go
+ │   ├── scheduler/release_scheduler.go        
+ │   └── service/
+ │       ├── auth_service.go
+ │       ├── payment_service.go
+ │       ├── wallet_service.go
+ │       ├── withdrawal_service.go
+ │       ├── seller_service.go
+ │       ├── mercadopago_service.go
+ │       └── idempotency_service.go
+ ├── scripts/init_db.sql
+ ├── Dockerfile
+ └── go.mod
+
+ 1.2 Base de Datos (MySQL - Puerto 3309)       
+
+ Tablas a crear:
+
+ 1. seller_accounts - Conductores vinculados a 
+  MP
+   - user_id, mp_access_token (encriptado),    
+ mp_refresh_token, status
+ 2. payments - Pagos de reservas
+   - booking_id, passenger_id, driver_id       
+   - amount, platform_fee (15%), driver_amount 
+  (85%)
+   - mp_preference_id, mp_payment_id
+   - status (pending/approved/refunded)        
+   - fund_status (held/released/refunded)      
+ 3. wallets - Balance de conductores
+   - available_balance, pending_balance,       
+ held_balance
+   - total_earned, total_withdrawn
+   - auto_withdraw_enabled,
+ auto_withdraw_threshold
+ 4. wallet_transactions - Historial de
+ movimientos
+   - type (credit/debit/hold/release)
+   - amount, balance_before, balance_after     
+   - payment_id, withdrawal_id
+ 5. withdrawals - Retiros solicitados
+   - amount, fee, net_amount
+   - status
+ (pending/processing/completed/failed)
+   - mp_transfer_id
+ 6. processed_events - Idempotencia
+
+ 1.3 Endpoints REST (Puerto 8005)
+
+ # Pagos
+ POST   /api/v1/payments/preference      #     
+ Crear preferencia MP
+ GET    /api/v1/payments/:id             #     
+ Estado del pago
+ POST   /api/v1/payments/:id/release     #     
+ Liberar fondos (pasajero confirma)
+
+ # Webhooks
+ POST   /api/v1/webhooks/mercadopago     #     
+ Notificaciones de MP
+
+ # Wallet
+ GET    /api/v1/wallet                   # Mi  
+ wallet
+ GET    /api/v1/wallet/transactions      #     
+ Historial
+ GET    /api/v1/wallet/stats             #     
+ Estadísticas
+ PATCH  /api/v1/wallet/settings          #     
+ Config auto-retiro
+
+ # Retiros
+ POST   /api/v1/withdrawals              #     
+ Solicitar retiro
+ GET    /api/v1/withdrawals              # Mis 
+  retiros
+
+ # Vinculación MP (conductor)
+ GET    /api/v1/seller/oauth/url         # URL 
+  para OAuth
+ POST   /api/v1/seller/oauth/callback    #     
+ Callback OAuth
+ GET    /api/v1/seller/status            #     
+ Estado vinculación
+
+ 1.4 Eventos RabbitMQ
+
+ Publica:
+ - payment.approved → bookings-api confirma    
+ reserva
+ - payment.released → wallet actualizada       
+ - payment.refunded → reembolso procesado      
+
+ Consume:
+ - booking.cancelled → iniciar reembolso       
+ - trip.completed → iniciar timer de
+ liberación (2h)
+
+ ---
+ FASE 2: Modificaciones Backend Existente      
+
+ 2.1 bookings-api
+
+ Archivo: internal/messaging/consumer.go       
+ - Agregar handler para payment.approved       
+ - Actualizar booking status a "confirmed"     
+
+ Archivo: internal/domain/booking.go
+ - Agregar campo payment_id opcional
+
+ 2.2 trips-api
+
+ Archivo: internal/messaging/publisher.go      
+ - Publicar evento trip.completed cuando viaje 
+  finaliza
+
+ ---
+ FASE 3: Frontend Mobile (React Native)        
+
+ 3.1 Nuevos Archivos
+
+ src/
+ ├── services/paymentsService.ts
+ ├── types/payment.ts
+ ├── screens/
+ │   ├── WalletScreen/
+ │   ├── WithdrawScreen/
+ │   ├── TransactionHistoryScreen/
+ │   └── SellerOnboardingScreen/
+ ├── components/
+ │   ├── payments/
+ │   │   ├── WalletCard.tsx
+ │   │   └── TransactionItem.tsx
+ │   └── modals/PaymentModal.tsx
+
+ 3.2 Modificar BookingModal
+
+ Archivo:
+ src/components/modals/BookingModal.tsx        
+
+ Flujo actual:
+ 1. Seleccionar asientos → Crear booking →     
+ Listo
+
+ Flujo nuevo:
+ 1. Seleccionar asientos
+ 2. Crear booking (status: pending_payment)    
+ 3. Crear preferencia de pago
+ 4. Abrir checkout MP (WebView/deep link)      
+ 5. Manejar retorno éxito/error
+ 6. Booking confirmado
+
+ 3.3 Pantalla WalletScreen
+
+ - Saldos: disponible, pendiente, retenido     
+ - Gráfico de ganancias
+ - Últimas transacciones
+ - Botón "Retirar"
+ - Botón "Vincular Mercado Pago"
+
+ 3.4 Actualizar Navegación
+
+ Archivo: src/navigation/types.ts
+ // Agregar:
+ Wallet: undefined;
+ Withdraw: undefined;
+ TransactionHistory: undefined;
+ SellerOnboarding: undefined;
+ PaymentSuccess: { paymentId: string };        
+
+ Archivo: src/navigation/AppNavigator.tsx      
+ - Agregar nuevas pantallas al stack
+
+ ---
+ FASE 4: Frontend Web (React + Vite)
+
+ 4.1 Nuevos Archivos
+
+ src/
+ ├── services/paymentsService.ts
+ ├── types/payment.ts
+ ├── pages/
+ │   ├── WalletPage.tsx
+ │   ├── WithdrawPage.tsx
+ │   └── TransactionHistoryPage.tsx
+ ├── components/wallet/
+ │   ├── WalletOverview.tsx
+ │   ├── BalanceCard.tsx
+ │   └── EarningsChart.tsx
+
+ 4.2 Mismas Funcionalidades que Mobile
+
+ - Dashboard de ganancias
+ - Historial de transacciones
+ - Solicitud de retiros
+ - Vinculación con MP
+
+ ---
+ FASE 5: Docker Compose
+
+ 5.1 Agregar Servicios
+
+ Archivo: docker-compose.yml
+
+ mysql-payments:
+   image: mysql:8.0
+   ports: ["3309:3306"]
+   environment:
+     MYSQL_DATABASE: payments_db
+   volumes:
+     - mysql_payments_data:/var/lib/mysql      
+
+ payments-api:
+   build: ./backend/payments-api
+   ports: ["8005:8005"]
+   environment:
+     DATABASE_URL: ...
+     RABBITMQ_URL: ...
+     MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN}       
+     MP_PUBLIC_KEY: ${MP_PUBLIC_KEY}
+     PLATFORM_FEE_PERCENTAGE: 15
+   depends_on:
+     - mysql-payments
+     - rabbit
+
+ 5.2 Variables de Entorno
+
+ Archivo: .env
+ MP_ACCESS_TOKEN=TEST-xxx
+ MP_PUBLIC_KEY=TEST-xxx
+ MP_CLIENT_ID=xxx
+ MP_CLIENT_SECRET=xxx
+ PLATFORM_FEE_PERCENTAGE=15
+ AUTO_RELEASE_HOURS=2
+
+ ---
+ Orden de Implementación (Sprints)
+
+ Sprint 1: Infraestructura (1-2 semanas)       
+
+ - Crear estructura payments-api
+ - Modelos DAO y migraciones SQL
+ - Configurar Docker Compose
+ - Health check y auth middleware
+
+ Sprint 2: Core de Pagos (2 semanas)
+
+ - Integración Mercado Pago SDK
+ - Crear preferencias de pago
+ - Implementar webhooks
+ - Sistema de wallet básico
+
+ Sprint 3: Eventos y Liberación (1 semana)     
+
+ - RabbitMQ publisher/consumer
+ - Handlers de eventos
+ - Scheduler de liberación automática
+ - Confirmación manual de pasajero
+
+ Sprint 4: Retiros y Reembolsos (1 semana)     
+
+ - Sistema de retiros
+ - Políticas de cancelación
+ - Proceso de reembolsos
+
+ Sprint 5: Frontend Mobile (1-2 semanas)       
+
+ - Types y servicios
+ - Modificar BookingModal
+ - WalletScreen
+ - WithdrawScreen
+ - SellerOnboardingScreen
+
+ Sprint 6: Frontend Web (1 semana)
+
+ - Portar servicios
+ - Páginas de wallet
+ - Dashboard de conductor
+
+ Sprint 7: Testing y Deploy (1 semana)
+
+ - Tests de integración
+ - Pruebas sandbox MP
+ - Documentación
+ - Deploy staging
+
+ ---
+ Archivos Críticos de Referencia
+
+ | Archivo
+                       | Propósito
+        |
+ |-------------------------------------------- 
+ ----------------------|---------------------- 
+ -------|
+ | backend/bookings-api/cmd/api/main.go        
+                       | Patrón de
+ inicialización    |
+ | backend/bookings-api/internal/messaging/con 
+ sumer.go              | Consumer RabbitMQ     
+        |
+ | backend/bookings-api/internal/publisher/res 
+ ervation_publisher.go | Publisher RabbitMQ    
+        |
+ |
+ backend/bookings-api/internal/dao/booking.go  
+                     | Modelos GORM
+      |
+ | backend/bookings-api/internal/service/idemp 
+ otency_service.go     | Idempotencia
+        |
+ | src/services/bookingsService.ts
+                       | Servicios TypeScript  
+ mobile |
+ | src/components/modals/BookingModal.tsx      
+                       | Modal a modificar     
+        |
+ | CarPooling/frontend/src/services/bookingsSe 
+ rvice.ts              | Servicios TypeScript  
+ web    |
+
+ ---
+ Flujo de Pago Completo
+
+ 1. Pasajero selecciona viaje y asientos       
+    ↓
+ 2. Crea booking (status: pending_payment)     
+    ↓
+ 3. Crea preferencia MP con split:
+    - 85% → conductor
+    - 15% → plataforma
+    ↓
+ 4. Redirige a checkout MP
+    ↓
+ 5. Pasajero paga
+    ↓
+ 6. Webhook: payment.approved
+    ↓
+ 7. Booking confirmado, asientos reservados    
+    ↓
+ 8. Viaje se completa
+    ↓
+ 9. Timer 2h o pasajero confirma
+    ↓
+ 10. Fondos liberados al wallet del conductor  
+    ↓
+ 11. Conductor puede retirar a su cuenta MP    
+
+ ---
+ Consideraciones de Seguridad
+
+ 1. Tokens OAuth encriptados con AES-256       
+ 2. Validar firma de webhooks de Mercado Pago  
+ 3. Rate limiting en endpoints de retiro       
+ 4. Idempotencia con event_id en todos los     
+ eventos
+ 5. Auditoría de transacciones financieras     
+ 6. No almacenar datos de tarjetas (solo       
+ tokens MP)
+
+ ---
+ ANEXO A: Configuración de Mercado Pago        
+
+ Paso 1: Crear cuenta de desarrollador
+
+ 1. Ir a
+ https://www.mercadopago.com.ar/developers     
+ 2. Click en "Crear cuenta" o iniciar sesión   
+ 3. Completar verificación de identidad        
+
+ Paso 2: Crear aplicación
+
+ 1. Ir a https://www.mercadopago.com.ar/develo 
+ pers/panel/app
+ 2. Click en "Crear aplicación"
+ 3. Nombre: "CarPooling App"
+ 4. Modelo de negocio: Marketplace
+ 5. Tipo: Pagos online
+
+ Paso 3: Obtener credenciales de prueba        
+
+ En el panel de la aplicación:
+ - Public Key: Para frontend (checkout)        
+ - Access Token: Para backend (API calls)      
+ - Client ID: Para OAuth
+ - Client Secret: Para OAuth
+
+ Paso 4: Configurar URLs de OAuth
+
+ En la configuración de la aplicación:
+ - Redirect URI: https://tu-dominio.com/api/v1 
+ /seller/oauth/callback
+ - Para desarrollo:
+ http://localhost:3000/seller/callback
+
+ Paso 5: Configurar Webhooks
+
+ 1. Ir a "Webhooks" en el panel
+ 2. Agregar URL: https://tu-dominio.com/api/v1 
+ /webhooks/mercadopago
+ 3. Eventos a escuchar:
+   - payment (pagos)
+   - merchant_order (órdenes)
+
+ Paso 6: Usuarios de prueba
+
+ 1. Ir a "Cuentas de prueba"
+ 2. Crear 2 usuarios:
+   - Comprador: Para simular pasajeros
+   - Vendedor: Para simular conductores        
+
+ Tarjetas de prueba (Sandbox)
+
+ | Tarjeta               | Número
+  | CVV | Vencimiento |
+ |-----------------------|-------------------- 
+ -|-----|-------------|
+ | Visa (aprobada)       | 4509 9535 6623 3704 
+  | 123 | 11/25       |
+ | Mastercard (aprobada) | 5031 7557 3453 0604 
+  | 123 | 11/25       |
+ | Visa (rechazada)      | 4000 0000 0000 0002 
+  | 123 | 11/25       |
+
+ ---
+ ANEXO B: Checkout con Deep Link (Mobile)      
+
+ Flujo de Pago
+
+ 1. Usuario confirma reserva
+    ↓
+ 2. App llama: POST /payments/preference       
+    ↓
+ 3. Backend crea preferencia en MP
+    ↓
+ 4. Backend retorna: { init_point, 
+ sandbox_init_point }
+    ↓
+ 5. App abre URL con 
+ Linking.openURL(init_point)
+    ↓
+ 6. Usuario paga en MP (app o navegador)       
+    ↓
+ 7. MP redirige a:
+ carpooling://payment/success?payment_id=xxx   
+    ↓
+ 8. App captura deep link y muestra 
+ confirmación
+
+ Configuración Deep Links
+
+ app.json (Expo):
+ {
+   "expo": {
+     "scheme": "carpooling",
+     "android": {
+       "intentFilters": [{
+         "action": "VIEW",
+         "data": [{ "scheme": "carpooling" }]  
+       }]
+     },
+     "ios": {
+       "bundleIdentifier":
+ "com.tuapp.carpooling"
+     }
+   }
+ }
+
+ URLs de retorno (enviar a MP):
+ success: carpooling://payment/success
+ failure: carpooling://payment/failure
+ pending: carpooling://payment/pending
+
+ Código de Ejemplo (React Native)
+
+ import * as Linking from 'expo-linking';      
+
+ // Crear preferencia y abrir checkout
+ const handlePayment = async () => {
+   const { init_point } = await
+ paymentsService.createPreference({
+     booking_id: bookingId,
+     return_url: 'carpooling://payment'        
+   });
+
+   await Linking.openURL(init_point);
+ };
+
+ // Escuchar retorno (en App.tsx o screen)     
+ useEffect(() => {
+   const subscription =
+ Linking.addEventListener('url', ({ url }) =>  
+ {
+     if (url.includes('payment/success')) {    
+       // Mostrar confirmación
+     } else if
+ (url.includes('payment/failure')) {
+       // Mostrar error
+     }
+   });
+
+   return () => subscription.remove();
+ }, []);
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+ Would you like to proceed?
+
+ ❯ 1. Yes, and auto-accept edits
+   2. Yes, and manually approve edits
+  3. Type here to tell Claude what to change   
+
+
+ ctrl-g to edit in Notepad

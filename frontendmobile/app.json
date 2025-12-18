@@ -1,0 +1,74 @@
+{
+  "expo": {
+    "name": "frontendmobile",
+    "slug": "frontendmobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "extra": {
+      "googleMapsApiKey": "AIzaSyB6yd213-yNM-TX5Ot6a-78da0AaeLoP0o"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "La app necesita tu ubicación para rastrear el viaje en tiempo real.",
+          "locationAlwaysPermission": "Permite que la app rastree tu ubicación incluso cuando está en segundo plano.",
+          "locationWhenInUsePermission": "La app necesita tu ubicación para mostrar tu posición en el mapa.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.carpooling.app",
+      "config": {
+        "googleMapsApiKey": "AIzaSyB6yd213-yNM-TX5Ot6a-78da0AaeLoP0o"
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicación para mostrarte en el mapa y calcular rutas.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Permite que rastreemos tu ubicación durante el viaje para actualizar tu posición en tiempo real.",
+        "NSLocationAlwaysUsageDescription": "La app necesita acceso a tu ubicación en segundo plano para rastrear viajes activos."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.carpooling.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyB6yd213-yNM-TX5Ot6a-78da0AaeLoP0o"
+        }
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "carpooling",
+    "packagerOpts": {
+      "config": "babel.config.js"
+    }
+  }
+}
+  
+
