@@ -1,0 +1,194 @@
+-- ============================================================================
+-- Payments API Database Initialization Script
+-- ============================================================================
+-- This script is run when the MySQL container starts for the first time.
+-- GORM AutoMigrate will create the tables, but this script can be used for:
+--   - Creating the database
+--   - Setting up initial data
+--   - Creating indexes not handled by GORM
+-- ============================================================================
+
+-- Create database if not exists (usually already created by Docker env var)
+CREATE DATABASE IF NOT EXISTS payments_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+USE payments_db;
+
+-- ============================================================================
+-- Note: Tables are created by GORM AutoMigrate
+-- This section documents the expected schema for reference
+-- ============================================================================
+
+-- seller_accounts: Stores Mercado Pago OAuth credentials for drivers
+-- CREATE TABLE IF NOT EXISTS seller_accounts (
+--     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+--     seller_uuid VARCHAR(36) NOT NULL UNIQUE,
+--     user_id VARCHAR(36) NOT NULL UNIQUE,
+--     mp_user_id VARCHAR(50),
+--     mp_access_token TEXT,
+--     mp_refresh_token TEXT,
+--     mp_public_key VARCHAR(100),
+--     token_expires_at DATETIME,
+--     status VARCHAR(20) NOT NULL DEFAULT 'pending',
+--     error_message TEXT,
+--     last_refresh_at DATETIME,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+--     INDEX idx_user_id (user_id),
+--     INDEX idx_status (status),
+--     INDEX idx_token_expires (token_expires_at)
+-- );
+
+-- payments: Stores payment records for bookings
+-- CREATE TABLE IF NOT EXISTS payments (
+--     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+--     payment_uuid VARCHAR(36) NOT NULL UNIQUE,
+--     booking_id VARCHAR(36) NOT NULL,
+--     trip_id VARCHAR(36) NOT NULL,
+--     passenger_id VARCHAR(36) NOT NULL,
+--     driver_id VARCHAR(36) NOT NULL,
+--     amount BIGINT NOT NULL,
+--     currency VARCHAR(3) NOT NULL DEFAULT 'ARS',
+--     platform_fee BIGINT NOT NULL,
+--     driver_amount BIGINT NOT NULL,
+--     seats_count INT NOT NULL DEFAULT 1,
+--     price_per_seat BIGINT NOT NULL,
+--     mp_preference_id VARCHAR(100),
+--     mp_payment_id VARCHAR(100),
+--     mp_merchant_order_id VARCHAR(100),
+--     mp_status VARCHAR(50),
+--     mp_status_detail VARCHAR(100),
+--     status VARCHAR(20) NOT NULL DEFAULT 'pending',
+--     fund_status VARCHAR(20) NOT NULL DEFAULT 'held',
+--     refunded_amount BIGINT DEFAULT 0,
+--     refund_reason TEXT,
+--     refunded_at DATETIME,
+--     approved_at DATETIME,
+--     released_at DATETIME,
+--     expires_at DATETIME,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+--     INDEX idx_booking_id (booking_id),
+--     INDEX idx_trip_id (trip_id),
+--     INDEX idx_passenger_id (passenger_id),
+--     INDEX idx_driver_id (driver_id),
+--     INDEX idx_status (status),
+--     INDEX idx_fund_status (fund_status),
+--     INDEX idx_mp_preference_id (mp_preference_id),
+--     INDEX idx_mp_payment_id (mp_payment_id)
+-- );
+
+-- wallets: Stores driver wallet balances
+-- CREATE TABLE IF NOT EXISTS wallets (
+--     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+--     wallet_uuid VARCHAR(36) NOT NULL UNIQUE,
+--     user_id VARCHAR(36) NOT NULL UNIQUE,
+--     available_balance BIGINT NOT NULL DEFAULT 0,
+--     pending_balance BIGINT NOT NULL DEFAULT 0,
+--     held_balance BIGINT NOT NULL DEFAULT 0,
+--     currency VARCHAR(3) NOT NULL DEFAULT 'ARS',
+--     total_earned BIGINT NOT NULL DEFAULT 0,
+--     total_withdrawn BIGINT NOT NULL DEFAULT 0,
+--     total_trips INT NOT NULL DEFAULT 0,
+--     auto_withdraw_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+--     auto_withdraw_threshold BIGINT NOT NULL DEFAULT 0,
+--     last_withdrawal_at DATETIME,
+--     last_deposit_at DATETIME,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+--     INDEX idx_user_id (user_id)
+-- );
+
+-- wallet_transactions: Stores wallet movement history
+-- CREATE TABLE IF NOT EXISTS wallet_transactions (
+--     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+--     transaction_uuid VARCHAR(36) NOT NULL UNIQUE,
+--     wallet_id BIGINT UNSIGNED NOT NULL,
+--     user_id VARCHAR(36) NOT NULL,
+--     type VARCHAR(20) NOT NULL,
+--     amount BIGINT NOT NULL,
+--     currency VARCHAR(3) NOT NULL DEFAULT 'ARS',
+--     balance_before BIGINT NOT NULL,
+--     balance_after BIGINT NOT NULL,
+--     payment_id VARCHAR(36),
+--     withdrawal_id VARCHAR(36),
+--     booking_id VARCHAR(36),
+--     trip_id VARCHAR(36),
+--     description TEXT,
+--     metadata JSON,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     INDEX idx_wallet_id (wallet_id),
+--     INDEX idx_user_id (user_id),
+--     INDEX idx_type (type),
+--     INDEX idx_payment_id (payment_id),
+--     INDEX idx_withdrawal_id (withdrawal_id),
+--     INDEX idx_created_at (created_at)
+-- );
+
+-- withdrawals: Stores withdrawal requests
+-- CREATE TABLE IF NOT EXISTS withdrawals (
+--     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+--     withdrawal_uuid VARCHAR(36) NOT NULL UNIQUE,
+--     user_id VARCHAR(36) NOT NULL,
+--     wallet_id BIGINT UNSIGNED NOT NULL,
+--     amount BIGINT NOT NULL,
+--     fee BIGINT NOT NULL DEFAULT 0,
+--     net_amount BIGINT NOT NULL,
+--     currency VARCHAR(3) NOT NULL DEFAULT 'ARS',
+--     mp_transfer_id VARCHAR(100),
+--     mp_status VARCHAR(50),
+--     destination_account VARCHAR(100),
+--     status VARCHAR(20) NOT NULL DEFAULT 'pending',
+--     error_message TEXT,
+--     retry_count INT NOT NULL DEFAULT 0,
+--     processed_at DATETIME,
+--     completed_at DATETIME,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+--     INDEX idx_user_id (user_id),
+--     INDEX idx_wallet_id (wallet_id),
+--     INDEX idx_status (status),
+--     INDEX idx_mp_transfer_id (mp_transfer_id),
+--     INDEX idx_created_at (created_at)
+-- );
+
+-- processed_events: Event idempotency tracking
+-- CREATE TABLE IF NOT EXISTS processed_events (
+--     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+--     event_id VARCHAR(36) NOT NULL UNIQUE,
+--     event_type VARCHAR(50) NOT NULL,
+--     result VARCHAR(20) NOT NULL,
+--     error_message TEXT,
+--     processed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     INDEX idx_event_type (event_type),
+--     INDEX idx_processed_at (processed_at)
+-- );
+
+-- ============================================================================
+-- Useful queries for monitoring and debugging
+-- ============================================================================
+
+-- Check wallet balances summary:
+-- SELECT
+--     SUM(available_balance) as total_available,
+--     SUM(pending_balance) as total_pending,
+--     SUM(held_balance) as total_held,
+--     COUNT(*) as wallet_count
+-- FROM wallets;
+
+-- Check daily payments:
+-- SELECT
+--     DATE(created_at) as date,
+--     COUNT(*) as payment_count,
+--     SUM(amount) as total_amount,
+--     SUM(platform_fee) as total_platform_fee
+-- FROM payments
+-- WHERE status = 'approved'
+-- GROUP BY DATE(created_at)
+-- ORDER BY date DESC;
+
+-- Check pending releases (funds held > 2 hours):
+-- SELECT p.* FROM payments p
+-- WHERE p.fund_status = 'held'
+-- AND p.status = 'approved'
+-- AND p.approved_at < DATE_SUB(NOW(), INTERVAL 2 HOUR);

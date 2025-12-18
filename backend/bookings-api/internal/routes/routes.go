@@ -78,6 +78,14 @@ func SetupRoutes(
 			bookings.PATCH("/:id/cancel", bookingController.CancelBooking) // Cancel booking
 		}
 
+		// Trip-related booking routes - protected by JWT authentication
+		trips := v1.Group("/trips")
+		trips.Use(middleware.AuthMiddleware(authService)) // JWT authentication
+		{
+			// Get all bookings for a specific trip (driver only)
+			trips.GET("/:trip_id/bookings", bookingController.GetTripBookings)
+		}
+
 		// Admin routes - protected by JWT + admin role
 		admin := v1.Group("/admin")
 		admin.Use(middleware.AuthMiddleware(authService)) // JWT authentication

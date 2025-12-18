@@ -33,8 +33,31 @@ type Trip struct {
 	CancelledBy        *int64     `json:"cancelled_by,omitempty" bson:"cancelled_by,omitempty"`
 	CancellationReason string     `json:"cancellation_reason,omitempty" bson:"cancellation_reason,omitempty"`
 
+	// Tracking fields for real-time location
+	CurrentLocation  *Coordinates     `json:"current_location,omitempty" bson:"current_location,omitempty"`
+	LocationHistory  []LocationPoint  `json:"location_history,omitempty" bson:"location_history,omitempty"`
+	TripProgress     *TripProgress    `json:"trip_progress,omitempty" bson:"trip_progress,omitempty"`
+	StartedAt        *time.Time       `json:"started_at,omitempty" bson:"started_at,omitempty"`
+	CompletedAt      *time.Time       `json:"completed_at,omitempty" bson:"completed_at,omitempty"`
+
 	CreatedAt time.Time `json:"created_at" bson:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" bson:"updated_at"`
+}
+
+// LocationPoint representa un punto de ubicación con timestamp
+type LocationPoint struct {
+	Lat       float64   `json:"lat" bson:"lat"`
+	Lng       float64   `json:"lng" bson:"lng"`
+	Timestamp time.Time `json:"timestamp" bson:"timestamp"`
+	Speed     float64   `json:"speed,omitempty" bson:"speed,omitempty"`       // km/h
+	Heading   float64   `json:"heading,omitempty" bson:"heading,omitempty"`   // degrees
+}
+
+// TripProgress representa el progreso del viaje en tiempo real
+type TripProgress struct {
+	DistanceTraveled       float64   `json:"distance_traveled" bson:"distance_traveled"`             // km
+	EstimatedTimeRemaining int       `json:"estimated_time_remaining" bson:"estimated_time_remaining"` // minutes
+	LastUpdated            time.Time `json:"last_updated" bson:"last_updated"`
 }
 
 // CreateTripRequest representa la solicitud para crear un nuevo viaje
@@ -66,4 +89,12 @@ type UpdateTripRequest struct {
 // CancelTripRequest representa la solicitud para cancelar un viaje
 type CancelTripRequest struct {
 	Reason string `json:"reason" binding:"required"`
+}
+
+// UnixToTime convierte un timestamp Unix (milisegundos) a time.Time
+func UnixToTime(timestamp int64) time.Time {
+	if timestamp == 0 {
+		return time.Now()
+	}
+	return time.Unix(0, timestamp*int64(time.Millisecond))
 }

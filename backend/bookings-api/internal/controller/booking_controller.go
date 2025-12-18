@@ -168,6 +168,38 @@ func (bc *BookingController) CancelBooking(c *gin.Context) {
 	})
 }
 
+// GetTripBookings handles GET /api/v1/trips/:trip_id/bookings
+// Retrieves all confirmed bookings for a specific trip (driver only)
+func (bc *BookingController) GetTripBookings(c *gin.Context) {
+	// Extract authenticated user ID from JWT context
+	userID, err := domain.GetUserIDFromContext(c)
+	if err != nil {
+		c.Error(domain.ErrUnauthorized)
+		return
+	}
+
+	// Extract trip ID from URL path
+	tripID := c.Param("trip_id")
+	if tripID == "" {
+		c.Error(domain.NewAppError("INVALID_TRIP_ID", "Trip ID is required", nil))
+		return
+	}
+
+	// Call service to get bookings for this trip
+	// Service layer handles authorization (only trip driver can view)
+	bookings, err := bc.bookingService.GetTripBookings(c.Request.Context(), tripID, userID)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	// Return success response
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    bookings,
+	})
+}
+
 // GetAllBookings handles GET /api/v1/admin/bookings
 // Lists all bookings in the system with pagination and filters (admin only)
 func (bc *BookingController) GetAllBookings(c *gin.Context) {

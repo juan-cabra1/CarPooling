@@ -17,6 +17,7 @@ import (
 	"trips-api/internal/repository"
 	"trips-api/internal/routes"
 	"trips-api/internal/service"
+	ws "trips-api/internal/websocket"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -72,7 +73,13 @@ func main() {
 	idempotencyService := service.NewIdempotencyService(eventsRepo)
 	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient, publisher)
 	chatService := service.NewChatService(messageRepo, tripsRepo, publisher)
+	trackingService := service.NewTrackingService(tripsRepo)
 	log.Println("✅ Services initialized")
+
+	// 🔌 Inicializar WebSocket hub para tracking en tiempo real
+	hub := ws.NewHub()
+	go hub.Run() // Iniciar hub en goroutine
+	log.Println("✅ WebSocket hub initialized")
 
 	// 📥 Inicializar RabbitMQ consumer
 	consumer, err := messaging.NewReservationConsumer(
@@ -103,6 +110,8 @@ func main() {
 	authService := service.NewAuthService(cfg.JWTSecret)
 	tripController := controller.NewTripController(tripService)
 	chatController := controller.NewChatController(chatService)
+	trackingController := controller.NewTrackingController(trackingService)
+	websocketController := controller.NewWebSocketController(hub, tripService)
 	log.Println("✅ Controllers initialized")
 
 	// 🌐 Configurar router HTTP con Gin
@@ -112,7 +121,7 @@ func main() {
 	jwtMiddleware := middleware.AuthMiddleware(authService)
 
 	// 🚦 Configurar rutas de la aplicación
-	routes.SetupRoutes(router, tripController, chatController, jwtMiddleware)
+	routes.SetupRoutes(router, tripController, chatController, trackingController, websocketController, jwtMiddleware)
 	log.Println("✅ Routes configured")
 
 	// Configuración del server HTTP con timeouts

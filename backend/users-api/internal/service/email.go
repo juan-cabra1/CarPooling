@@ -35,30 +35,67 @@ func (s *emailService) GenerateToken() (string, error) {
 }
 
 func (s *emailService) SendVerificationEmail(toEmail, token string) error {
-	verificationURL := fmt.Sprintf("%s/verify-email?token=%s", s.config.AppURL, token)
+	// URL para web
+	webURL := fmt.Sprintf("%s/verify-email?token=%s", s.config.AppURL, token)
+
+	// Deep link para mobile
+	mobileURL := fmt.Sprintf("carpooling://verify-email?token=%s", token)
 
 	subject := "Verifica tu correo electrónico - CarPooling"
 	body := fmt.Sprintf(`
 		<h2>Bienvenido a CarPooling</h2>
-		<p>Por favor, verifica tu correo electrónico haciendo clic en el siguiente enlace:</p>
-		<a href="%s">Verificar Email</a>
-		<p>Este enlace es válido por 24 horas.</p>
-	`, verificationURL)
+		<p>Por favor, verifica tu correo electrónico usando una de las siguientes opciones:</p>
+
+		<h3>Opción 1: Desde la Web</h3>
+		<p><a href="%s" style="background-color: #0ea5e9; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">Verificar desde Web</a></p>
+
+		<h3>Opción 2: Desde la App Móvil</h3>
+		<p><a href="%s" style="background-color: #14b8a6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">Abrir en la App</a></p>
+
+		<p style="margin-top: 20px; color: #6b7280; font-size: 14px;">
+			Si el botón "Abrir en la App" no funciona, copia y pega este enlace en tu navegador móvil:<br>
+			<code style="background-color: #f3f4f6; padding: 4px 8px; border-radius: 4px;">%s</code>
+		</p>
+
+		<p style="margin-top: 20px; color: #dc2626; font-size: 14px;">
+			⚠️ Este enlace es válido por 24 horas.
+		</p>
+	`, webURL, mobileURL, mobileURL)
 
 	return s.sendEmail(toEmail, subject, body)
 }
 
 func (s *emailService) SendPasswordResetEmail(toEmail, token string) error {
-	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.config.AppURL, token)
+	// URL para web
+	webURL := fmt.Sprintf("%s/reset-password?token=%s", s.config.AppURL, token)
+
+	// Deep link para mobile
+	mobileURL := fmt.Sprintf("carpooling://reset-password?token=%s", token)
 
 	subject := "Restablece tu contraseña - CarPooling"
 	body := fmt.Sprintf(`
 		<h2>Restablecer Contraseña</h2>
-		<p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
-		<a href="%s">Restablecer Contraseña</a>
-		<p>Este enlace es válido por 1 hora.</p>
-		<p>Si no solicitaste este cambio, ignora este correo.</p>
-	`, resetURL)
+		<p>Has solicitado restablecer tu contraseña. Usa una de las siguientes opciones:</p>
+
+		<h3>Opción 1: Desde la Web</h3>
+		<p><a href="%s" style="background-color: #0ea5e9; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">Restablecer desde Web</a></p>
+
+		<h3>Opción 2: Desde la App Móvil</h3>
+		<p><a href="%s" style="background-color: #14b8a6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">Abrir en la App</a></p>
+
+		<p style="margin-top: 20px; color: #6b7280; font-size: 14px;">
+			Si el botón "Abrir en la App" no funciona, copia y pega este enlace en tu navegador móvil:<br>
+			<code style="background-color: #f3f4f6; padding: 4px 8px; border-radius: 4px;">%s</code>
+		</p>
+
+		<p style="margin-top: 20px; color: #dc2626; font-size: 14px;">
+			⚠️ Este enlace es válido por 1 hora.
+		</p>
+
+		<p style="margin-top: 20px; color: #6b7280; font-size: 14px;">
+			Si no solicitaste este cambio, ignora este correo.
+		</p>
+	`, webURL, mobileURL, mobileURL)
 
 	return s.sendEmail(toEmail, subject, body)
 }

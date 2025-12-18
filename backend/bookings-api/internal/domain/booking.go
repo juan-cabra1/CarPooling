@@ -10,6 +10,7 @@ type CreateBookingRequest struct {
 	TripID        string `json:"trip_id" binding:"required"`
 	PassengerID   int64  `json:"passenger_id" binding:"required"`
 	SeatsReserved int    `json:"seats_reserved" binding:"required,min=1"`
+	DevMode       bool   `json:"dev_mode,omitempty"` // If true, create as "confirmed" instead of "pending" (for testing)
 }
 
 // BookingResponse represents a booking in API responses

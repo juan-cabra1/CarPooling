@@ -9,7 +9,14 @@ import (
 )
 
 // SetupRoutes configura todas las rutas de la aplicación
-func SetupRoutes(router *gin.Engine, tripController controller.TripController, chatController *controller.ChatController, jwtMiddleware gin.HandlerFunc) {
+func SetupRoutes(
+	router *gin.Engine,
+	tripController controller.TripController,
+	chatController *controller.ChatController,
+	trackingController controller.TrackingController,
+	websocketController controller.WebSocketController,
+	jwtMiddleware gin.HandlerFunc,
+) {
 	// Health check endpoint
 	router.GET("/health", healthCheck)
 
@@ -29,6 +36,19 @@ func SetupRoutes(router *gin.Engine, tripController controller.TripController, c
 		// Chat routes (protected - requires authentication)
 		protected.POST("/:id/messages", chatController.SendMessage)
 		protected.GET("/:id/messages", chatController.GetMessages)
+
+		// Tracking routes (protected - requires authentication)
+		protected.POST("/:id/start", trackingController.StartTrip)
+		protected.POST("/:id/location", trackingController.UpdateLocation)
+		protected.POST("/:id/complete", trackingController.CompleteTrip)
+		protected.GET("/:id/tracking", trackingController.GetTripTracking)
+	}
+
+	// WebSocket endpoint (protected - requires authentication)
+	wsProtected := router.Group("/ws")
+	wsProtected.Use(jwtMiddleware)
+	{
+		wsProtected.GET("", websocketController.HandleWebSocket)
 	}
 }
 

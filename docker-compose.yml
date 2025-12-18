@@ -10,7 +10,7 @@ services:
   # --------------------------------------------------------------------------
 
   mongo:
-    image: mongo:latest
+    image: mongo:4.4  # CAMBIADO: De latest a 4.4 para evitar problemas de AVX
     container_name: mongo
     restart: unless-stopped
     ports:
@@ -24,10 +24,11 @@ services:
     networks:
       - carpooling-network
     healthcheck:
-      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
-      interval: 10s
-      timeout: 5s
+      test: [ "CMD", "mongo", "--eval", "db.adminCommand('ping')", "--quiet" ]  # AÑADIDO: --quiet
+      interval: 30s  # AUMENTADO: De 10s a 30s
+      timeout: 10s   # AUMENTADO: De 5s a 10s
       retries: 5
+      start_period: 90s  # AÑADIDO: Tiempo para inicializarse
 
   mysql-users:
     image: mysql:8.0
@@ -45,9 +46,11 @@ services:
       - carpooling-network
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
   mysql-bookings:
     image: mysql:8.0
     container_name: mysql-bookings
@@ -63,9 +66,31 @@ services:
       - carpooling-network
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_BOOKINGS_ROOT_PASSWORD:-rootpass_bookings}" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  mysql-payments:
+    image: mysql:8.0
+    container_name: mysql-payments
+    restart: unless-stopped
+    ports:
+      - "3309:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PAYMENTS_ROOT_PASSWORD:-rootpass_payments}
+      MYSQL_DATABASE: payments_db
+    volumes:
+      - mysql_payments_data:/var/lib/mysql
+      - ./backend/payments-api/scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    networks:
+      - carpooling-network
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
 
   rabbit:
     image: rabbitmq:3-management
@@ -150,6 +175,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
   trips-api:
     build: ./backend/trips-api
     container_name: trips-api
@@ -202,6 +228,47 @@ services:
         condition: service_started
     healthcheck:
       test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8003/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  payments-api:
+    build: ./backend/payments-api
+    container_name: payments-api
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    environment:
+      SERVER_PORT: 8005
+      DATABASE_URL: root:${MYSQL_PAYMENTS_ROOT_PASSWORD:-rootpass_payments}@tcp(mysql-payments:3306)/payments_db?charset=utf8mb4&parseTime=True&loc=Local
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbit:5672/
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      USERS_API_URL: http://users-api:8001
+      TRIPS_API_URL: http://trips-api:8002
+      BOOKINGS_API_URL: http://bookings-api:8003
+      # Mercado Pago
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      MP_PUBLIC_KEY: ${MP_PUBLIC_KEY:-}
+      MP_CLIENT_ID: ${MP_CLIENT_ID:-}
+      MP_CLIENT_SECRET: ${MP_CLIENT_SECRET:-}
+      MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
+      # Business rules
+      PLATFORM_FEE_PERCENTAGE: ${PLATFORM_FEE_PERCENTAGE:-15}
+      AUTO_RELEASE_HOURS: ${AUTO_RELEASE_HOURS:-2}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    networks:
+      - carpooling-network
+    depends_on:
+      mysql-payments:
+        condition: service_healthy
+      rabbit:
+        condition: service_healthy
+      bookings-api:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8005/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -290,6 +357,7 @@ networks:
   carpooling-network:
     driver: bridge
     name: carpooling-network
+
 # ============================================================================
 # VOLUMES
 # ============================================================================
@@ -297,5 +365,6 @@ volumes:
   mongo_data:
   mysql_users_data:
   mysql_bookings_data:
+  mysql_payments_data:
   rabbit_data:
   solr_data:
