@@ -24,7 +24,7 @@ func LoadConfig() (*Config, error) {
 		RabbitMQURL: mustGetEnv("RABBITMQ_URL"),
 
 		// Variables NO CRÍTICAS - Con defaults razonables
-		ServerPort:  getEnv("SERVER_PORT", "8003"),
+		ServerPort:  getEnvFallback("PORT", "SERVER_PORT", "8003"),
 		TripsAPIURL: getEnv("TRIPS_API_URL", "http://localhost:8002"),
 		Environment: getEnv("ENVIRONMENT", "development"),
 	}
@@ -40,6 +40,18 @@ func (c *Config) IsDevelopment() bool {
 // IsProduction returns true if running in production environment
 func (c *Config) IsProduction() bool {
 	return c.Environment == "production"
+}
+
+// getEnvFallback intenta primary primero, luego secondary, luego el default
+// Usado para compatibilidad con Railway (inyecta PORT) y desarrollo local (SERVER_PORT)
+func getEnvFallback(primary, secondary, defaultValue string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	if v := os.Getenv(secondary); v != "" {
+		return v
+	}
+	return defaultValue
 }
 
 // getEnv retrieves an environment variable with a fallback default value

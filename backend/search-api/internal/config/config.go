@@ -67,7 +67,7 @@ func LoadConfig() (*Config, error) {
 		},
 
 		// Variables NO CRÍTICAS - Con defaults razonables
-		ServerPort: getEnv("SERVER_PORT", "8004"),
+		ServerPort: getEnvFallback("PORT", "SERVER_PORT", "8004"),
 		Solr: SolrConfig{
 			URL:  getEnv("SOLR_URL", "http://localhost:8983/solr"),
 			Core: getEnv("SOLR_CORE", "carpooling_trips"),
@@ -84,6 +84,18 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// getEnvFallback intenta primary primero, luego secondary, luego el default
+// Usado para compatibilidad con Railway (inyecta PORT) y desarrollo local (SERVER_PORT)
+func getEnvFallback(primary, secondary, defaultValue string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	if v := os.Getenv(secondary); v != "" {
+		return v
+	}
+	return defaultValue
 }
 
 func getEnv(key, defaultValue string) string {

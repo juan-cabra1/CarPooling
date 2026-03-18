@@ -30,7 +30,7 @@ func LoadConfig() (*Config, error) {
 		AppURL:       mustGetEnv("APP_URL"),
 
 		// Variables NO CRÍTICAS - Con defaults razonables
-		ServerPort: getEnv("SERVER_PORT", "8001"),
+		ServerPort: getEnvFallback("PORT", "SERVER_PORT", "8001"),
 		SMTPHost:   getEnv("SMTP_HOST", "smtp.gmail.com"),
 		SMTPPort:   getEnv("SMTP_PORT", "587"),
 		SMTPFrom:   getEnv("SMTP_FROM", "matiasjbocco@gmail.com"),
@@ -52,6 +52,18 @@ func buildDatabaseURL() string {
 	dbName := getEnv("DB_NAME_USERS", "carpooling_users")
 
 	return dbUser + ":" + dbPassword + "@tcp(" + dbHost + ":" + dbPort + ")/" + dbName + "?charset=utf8mb4&parseTime=True&loc=Local"
+}
+
+// getEnvFallback intenta primary primero, luego secondary, luego el default
+// Usado para compatibilidad con Railway (inyecta PORT) y desarrollo local (SERVER_PORT)
+func getEnvFallback(primary, secondary, defaultValue string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	if v := os.Getenv(secondary); v != "" {
+		return v
+	}
+	return defaultValue
 }
 
 // getEnv obtiene variable con fallback (solo para variables NO críticas)
