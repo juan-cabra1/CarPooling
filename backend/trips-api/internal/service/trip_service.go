@@ -37,6 +37,10 @@ type TripService interface {
 
 	// ProcessReservationCancelled maneja eventos reservation.cancelled
 	ProcessReservationCancelled(ctx context.Context, event messaging.ReservationCancelledEvent) error
+
+	// UpdateTripStatus updates the status of a trip (only the owner can do this)
+	// Valid transitions: published → in_progress → completed
+	UpdateTripStatus(ctx context.Context, tripID string, userID int64, newStatus string) error
 }
 
 type tripService struct {
@@ -452,4 +456,38 @@ func (s *tripService) ProcessReservationCancelled(ctx context.Context, event mes
 		Msg("Reservation cancelled successfully")
 
 	return nil // ACK
+}
+
+// UpdateTripStatus updates the status of a trip.
+// Only the driver who owns the trip can change its status.
+// Valid transitions: published/full → in_progress → completed
+func (s *tripService) UpdateTripStatus(ctx context.Context, tripID string, userID int64, newStatus string) error {
+	allowed := map[string]bool{
+		"in_progress": true,
+		"completed":   true,
+		"cancelled":   true,
+	}
+	if !allowed[newStatus] {
+		return fmt.Errorf("invalid status: %s", newStatus)
+	}
+
+	trip, err := s.tripRepo.FindByID(ctx, tripID)
+	if err != nil {
+		return fmt.Errorf("trip not found: %w", err)
+	}
+	if trip.DriverID != userID {
+		return domain.ErrUnauthorized
+	}
+
+	if err := s.tripRepo.UpdateStatus(ctx, tripID, newStatus); err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	log.Info().
+		Str("trip_id", tripID).
+		Int64("driver_id", userID).
+		Str("new_status", newStatus).
+		Msg("Trip status updated")
+
+	return nil
 }

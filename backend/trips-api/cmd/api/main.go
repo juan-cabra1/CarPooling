@@ -17,6 +17,7 @@ import (
 	"trips-api/internal/repository"
 	"trips-api/internal/routes"
 	"trips-api/internal/service"
+	ws "trips-api/internal/websocket"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -68,10 +69,16 @@ func main() {
 	defer publisher.Close()
 	log.Println("✅ RabbitMQ publisher initialized")
 
+	// 🔌 Iniciar WebSocket Hub
+	wsHub := ws.NewHub()
+	go wsHub.Run()
+	log.Println("✅ WebSocket hub started")
+
 	// 📦 Capa de servicios: lógica de negocio
 	idempotencyService := service.NewIdempotencyService(eventsRepo)
 	tripService := service.NewTripService(tripsRepo, idempotencyService, usersClient, publisher)
-	chatService := service.NewChatService(messageRepo, tripsRepo, publisher)
+	chatService := service.NewChatService(messageRepo, tripsRepo, publisher, wsHub)
+	trackingService := service.NewTrackingService(tripsRepo)
 	log.Println("✅ Services initialized")
 
 	// 📥 Inicializar RabbitMQ consumer
@@ -103,16 +110,23 @@ func main() {
 	authService := service.NewAuthService(cfg.JWTSecret)
 	tripController := controller.NewTripController(tripService)
 	chatController := controller.NewChatController(chatService)
+	trackingController := controller.NewTrackingController(trackingService)
+	wsController := controller.NewWSController(wsHub, cfg.JWTSecret)
+	websocketController := controller.NewWebSocketController(wsHub, tripService)
+	routeController := controller.NewRouteController(cfg.GoogleMapsAPIKey)
 	log.Println("✅ Controllers initialized")
 
 	// 🌐 Configurar router HTTP con Gin
 	router := gin.Default()
 
+	// 🌍 CORS middleware — debe aplicarse antes que cualquier ruta
+	router.Use(middleware.CORSMiddleware())
+
 	// 🔐 Crear JWT middleware
 	jwtMiddleware := middleware.AuthMiddleware(authService)
 
 	// 🚦 Configurar rutas de la aplicación
-	routes.SetupRoutes(router, tripController, chatController, jwtMiddleware)
+	routes.SetupRoutes(router, tripController, chatController, trackingController, wsController, websocketController, routeController, jwtMiddleware)
 	log.Println("✅ Routes configured")
 
 	// Configuración del server HTTP con timeouts

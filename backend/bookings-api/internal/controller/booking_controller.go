@@ -85,12 +85,8 @@ func (bc *BookingController) GetBooking(c *gin.Context) {
 		return
 	}
 
-	// Authorization: verify user is booking owner or trip driver
-	// Note: Service layer should handle driver check via trips-api
-	// For now, we only check if user is the passenger
-	if booking.PassengerID != userID {
-		// TODO: Check if user is trip driver (requires trips-api call)
-		// For now, only allow passenger to view their own booking
+	// Authorization: passenger OR driver can view the booking
+	if booking.PassengerID != userID && booking.DriverID != userID {
 		c.Error(domain.ErrUnauthorized.WithMessage("You can only view your own bookings"))
 		return
 	}
@@ -165,6 +161,37 @@ func (bc *BookingController) CancelBooking(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Booking cancelled successfully",
+	})
+}
+
+// GetTripBookings handles GET /api/v1/bookings/trip/:trip_id
+// Lists all bookings for a specific trip — only accessible by the trip driver
+// The driver_id is stored in confirmed bookings; for full validation use trip ID matching
+func (bc *BookingController) GetTripBookings(c *gin.Context) {
+	userID, err := domain.GetUserIDFromContext(c)
+	if err != nil {
+		c.Error(domain.ErrUnauthorized)
+		return
+	}
+
+	tripID := c.Param("trip_id")
+	if tripID == "" {
+		c.Error(domain.NewAppError("INVALID_TRIP_ID", "Trip ID is required", nil))
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+
+	bookings, err := bc.bookingService.GetTripBookings(c.Request.Context(), tripID, userID, page, limit)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    bookings,
 	})
 }
 

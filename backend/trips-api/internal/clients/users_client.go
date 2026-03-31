@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 	"trips-api/internal/domain"
 )
@@ -77,7 +78,9 @@ func (c *usersHTTPClient) GetUser(ctx context.Context, userID int64, authToken s
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Forward Authorization header to users-api
+	// Use internal token for service-to-service auth
+	req.Header.Set("X-Internal-Token", os.Getenv("INTERNAL_API_TOKEN"))
+	// Forward Authorization header to users-api (fallback)
 	if authToken != "" {
 		req.Header.Set("Authorization", authToken)
 	}

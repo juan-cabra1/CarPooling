@@ -22,6 +22,7 @@ type TripRepository interface {
 	UpdateAvailability(ctx context.Context, tripID string, seatsDelta int, expectedVersion int) error
 	Cancel(ctx context.Context, id string, cancelledBy int64, reason string) error
 	UpdateLastActivity(ctx context.Context, tripID string, timestamp time.Time) error
+	UpdateStatus(ctx context.Context, tripID string, status string) error
 }
 
 type tripRepository struct {
@@ -267,6 +268,34 @@ func (r *tripRepository) Cancel(ctx context.Context, id string, cancelledBy int6
 
 	if result.MatchedCount == 0 {
 		return domain.ErrTripNotFound
+	}
+
+	return nil
+}
+
+// UpdateStatus updates only the status field of a trip
+func (r *tripRepository) UpdateStatus(ctx context.Context, tripID string, status string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	objectID, err := primitive.ObjectIDFromHex(tripID)
+	if err != nil {
+		return fmt.Errorf("invalid trip ID: %w", err)
+	}
+
+	update := bson.M{
+		"$set": bson.M{
+			"status":     status,
+			"updated_at": time.Now(),
+		},
+	}
+
+	result, err := r.collection.UpdateOne(ctx, bson.M{"_id": objectID}, update)
+	if err != nil {
+		return fmt.Errorf("failed to update trip status: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return fmt.Errorf("trip not found")
 	}
 
 	return nil

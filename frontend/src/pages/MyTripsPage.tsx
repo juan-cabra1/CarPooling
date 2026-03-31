@@ -21,6 +21,8 @@ export default function MyTripsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [tripToDelete, setTripToDelete] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
     fetchMyTrips()
@@ -45,18 +47,16 @@ export default function MyTripsPage() {
     }
   }
 
-  const handleDeleteTrip = async (tripId: string) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar este viaje?')) {
-      return
-    }
-
+  const handleDeleteTrip = async () => {
+    if (!tripToDelete) return
+    setDeleteError('')
     try {
-      setDeletingId(tripId)
-      await tripsService.deleteTrip(tripId)
-      // Refrescar la lista
+      setDeletingId(tripToDelete)
+      await tripsService.deleteTrip(tripToDelete)
+      setTripToDelete(null)
       await fetchMyTrips()
     } catch (err) {
-      alert(getErrorMessage(err))
+      setDeleteError(getErrorMessage(err))
     } finally {
       setDeletingId(null)
     }
@@ -114,6 +114,7 @@ export default function MyTripsPage() {
   }
 
   return (
+    <>
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-8">
       <div className="container mx-auto px-4">
         <div className="max-w-6xl mx-auto">
@@ -311,7 +312,7 @@ export default function MyTripsPage() {
 
                           <Button
                             variant="destructive"
-                            onClick={() => handleDeleteTrip(trip.id)}
+                            onClick={() => { setTripToDelete(trip.id); setDeleteError('') }}
                             disabled={deletingId === trip.id}
                             className="flex-1"
                           >
@@ -347,5 +348,41 @@ export default function MyTripsPage() {
         </div>
       </div>
     </div>
+
+    {/* Delete Confirmation Modal */}
+    {tripToDelete && (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full">
+          <h3 className="text-lg font-semibold mb-2">Eliminar viaje</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            ¿Estás seguro de que quieres eliminar este viaje? Esta acción no se puede deshacer.
+          </p>
+          {deleteError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">{deleteError}</p>
+          )}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => { setTripToDelete(null); setDeleteError('') }}
+              disabled={!!deletingId}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteTrip}
+              disabled={!!deletingId}
+              className="flex-1"
+            >
+              {deletingId ? (
+                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />Eliminando...</>
+              ) : 'Eliminar'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

@@ -17,6 +17,7 @@ type TripController interface {
 	ListTrips(c *gin.Context)
 	UpdateTrip(c *gin.Context)
 	DeleteTrip(c *gin.Context)
+	PatchTripStatus(c *gin.Context)
 }
 
 type tripController struct {
@@ -303,4 +304,42 @@ func handleServiceError(c *gin.Context, err error) {
 		"success": false,
 		"error":   err.Error(),
 	})
+}
+
+// PatchTripStatus updates the status of a trip (driver only)
+// PATCH /trips/:id/status
+// Body: { "status": "in_progress" | "completed" | "cancelled" }
+func (ctrl *tripController) PatchTripStatus(c *gin.Context) {
+	tripID := c.Param("id")
+
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "unauthorized"})
+		return
+	}
+	userID, ok := userIDVal.(int64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "unauthorized"})
+		return
+	}
+
+	var body struct {
+		Status string `json:"status" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "status is required"})
+		return
+	}
+
+	if err := ctrl.tripService.UpdateTripStatus(c.Request.Context(), tripID, userID, body.Status); err != nil {
+		handleTripError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "status updated"})
+}
+
+// handleTripError is an alias for handleServiceError for trip status operations
+func handleTripError(c *gin.Context, err error) {
+	handleServiceError(c, err)
 }

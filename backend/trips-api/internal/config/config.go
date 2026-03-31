@@ -7,11 +7,13 @@ import (
 )
 
 type Config struct {
-	ServerPort  string
-	Mongo       MongoConfig
-	RabbitMQ    RabbitMQConfig
-	JWTSecret   string
-	UsersAPIURL string
+	ServerPort       string
+	Mongo            MongoConfig
+	RabbitMQ         RabbitMQConfig
+	JWTSecret        string
+	UsersAPIURL      string
+	GoogleMapsAPIKey string // Para endpoint /route server-side
+	FrontendWebURL   string // URL base del frontend web (ej: https://carpooling.railway.app)
 }
 
 type MongoConfig struct {
@@ -42,8 +44,10 @@ func LoadConfig() (*Config, error) {
 		},
 
 		// Variables NO CRÍTICAS - Con defaults razonables
-		ServerPort:  getEnvFallback("PORT", "SERVER_PORT", "8002"),
-		UsersAPIURL: getEnv("USERS_API_URL", "http://localhost:8001"),
+		ServerPort:       getEnvFallback("PORT", "SERVER_PORT", "8002"),
+		UsersAPIURL:      getEnv("USERS_API_URL", "http://localhost:8001"),
+		GoogleMapsAPIKey: getEnv("GOOGLE_MAPS_API_KEY", ""),
+		FrontendWebURL:   getEnv("FRONTEND_WEB_URL", ""),
 	}
 
 	return cfg, nil

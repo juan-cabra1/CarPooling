@@ -3,7 +3,7 @@
  * Handles trip CRUD operations and queries
  */
 
-import apiClient from './api'
+import { tripsApi as apiClient } from './api'
 import type {
   Trip,
   CreateTripRequest,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"search-api/internal/domain"
@@ -72,6 +73,7 @@ func (c *usersHTTPClient) GetUser(ctx context.Context, userID int64) (*domain.Us
 		// Set headers
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "search-api/1.0")
+		req.Header.Set("X-Internal-Token", os.Getenv("INTERNAL_API_TOKEN"))
 
 		// Execute request with retry logic
 		resp, err := DoRequestWithRetry(ctx, c.client, req, c.maxRetries, c.retryWaitTime)

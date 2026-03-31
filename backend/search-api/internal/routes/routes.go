@@ -23,6 +23,7 @@ func SetupRoutes(
 
 	// API v1 group
 	v1 := router.Group("/api/v1")
+	v1.Use(middleware.RateLimitMiddleware(60))
 	{
 		// Search endpoints (all public, no auth required)
 		v1.GET("/search/trips", searchController.SearchTrips)

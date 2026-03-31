@@ -3,7 +3,7 @@
  * Handles user rating operations (driver and passenger ratings)
  */
 
-import apiClient from './api'
+import { usersApi as apiClient } from './api'
 import type {
   Rating,
   CreateRatingRequest,

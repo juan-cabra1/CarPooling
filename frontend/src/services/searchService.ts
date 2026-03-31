@@ -4,7 +4,7 @@
  * Note: All endpoints are public (no authentication required)
  */
 
-import apiClient from './api'
+import { searchApi as apiClient } from './api'
 import type {
   SearchQuery,
   SearchResponse,

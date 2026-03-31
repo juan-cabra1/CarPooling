@@ -122,6 +122,21 @@ export default function Navbar() {
                 <Calendar className="w-4 h-4" />
                 Mis Reservas
               </Link>
+
+              {user?.role === 'admin' && (
+                <Link
+                  to="/admin"
+                  className={cn(
+                    'relative px-4 py-2 text-sm font-medium rounded-full transition-colors flex items-center gap-2',
+                    isActive('/admin')
+                      ? 'bg-purple-100 text-purple-700'
+                      : 'text-purple-600 hover:bg-purple-50'
+                  )}
+                >
+                  <Shield className="w-4 h-4" />
+                  Panel Admin
+                </Link>
+              )}
             </>
           )}
         </div>

@@ -20,6 +20,7 @@ import ProfilePage from '@/pages/ProfilePage'
 import TripDetailPage from '@/pages/TripDetailPage'
 import EditTripPage from '@/pages/EditTripPage'
 import UnauthorizedPage from '@/pages/UnauthorizedPage'
+import WalletPage from '@/pages/WalletPage'
 
 // Admin Pages
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage'
@@ -124,6 +125,11 @@ function App() {
             <Route path="profile" element={
               <ProtectedRoute>
                 <ProfilePage />
+              </ProtectedRoute>
+            } />
+            <Route path="wallet" element={
+              <ProtectedRoute>
+                <WalletPage />
               </ProtectedRoute>
             } />
           </Route>

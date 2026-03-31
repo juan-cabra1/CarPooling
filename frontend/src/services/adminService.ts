@@ -3,7 +3,7 @@
  * Handles admin-only operations like user management, trip management, and booking management
  */
 
-import apiClient from './api'
+import { usersApi, bookingsApi, tripsApi } from './api'
 import type { User } from '@/types/user'
 import type { Trip } from '@/types/trip'
 import type { Booking } from '@/types/booking'
@@ -49,7 +49,7 @@ export async function getAllUsers(
   if (role) params.append('role', role)
   if (search) params.append('search', search)
 
-  const response = await apiClient.get(`/admin/users?${params.toString()}`)
+  const response = await usersApi.get(`/admin/users?${params.toString()}`)
   return response.data.data
 }
 
@@ -70,7 +70,7 @@ export async function getAllBookings(
   if (tripId) params.append('trip_id', tripId)
   if (passengerId) params.append('passenger_id', passengerId.toString())
 
-  const response = await apiClient.get(`/admin/bookings?${params.toString()}`)
+  const response = await bookingsApi.get(`/admin/bookings?${params.toString()}`)
   return response.data.data
 }
 
@@ -87,7 +87,7 @@ export async function getAllTrips(
   params.append('limit', limit.toString())
   if (status) params.append('status', status)
 
-  const response = await apiClient.get(`/trips?${params.toString()}`)
+  const response = await tripsApi.get(`/trips?${params.toString()}`)
   return response.data.data
 }
 
@@ -98,8 +98,7 @@ export async function getAllTrips(
  * @param _email - User email (unused but kept for function signature compatibility)
  */
 export async function forceReauthentication(userId: number, _email: string): Promise<void> {
-  // Call admin endpoint that will unverify and resend email
-  const response = await apiClient.post(`/admin/users/${userId}/force-reauth`)
+  const response = await usersApi.post(`/admin/users/${userId}/force-reauth`)
   return response.data
 }
 

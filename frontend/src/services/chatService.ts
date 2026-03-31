@@ -3,7 +3,7 @@
  * Handles trip chat/messaging operations
  */
 
-import apiClient from './api'
+import { tripsApi as apiClient } from './api'
 import type { ApiResponse } from '@/types'
 
 /**
@@ -77,9 +77,25 @@ export async function getMessages(tripId: string): Promise<MessagesResponse> {
   return { messages: [], count: 0 }
 }
 
+/**
+ * Build the WebSocket URL for a trip's chat room.
+ * Uses VITE_TRIPS_WS_URL env var in production, derives from window.location in dev.
+ */
+export function getChatWebSocketURL(tripId: string, token: string): string {
+  const base = import.meta.env.VITE_TRIPS_WS_URL
+  if (base) {
+    return `${base}/${tripId}/ws?token=${encodeURIComponent(token)}`
+  }
+  // Fallback for local dev: derive from current host
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  // Vite dev proxy is on the same host but trips-api is on port 8002
+  return `${protocol}//localhost:8002/trips/${tripId}/ws?token=${encodeURIComponent(token)}`
+}
+
 const chatService = {
   sendMessage,
   getMessages,
+  getChatWebSocketURL,
 }
 
 export default chatService

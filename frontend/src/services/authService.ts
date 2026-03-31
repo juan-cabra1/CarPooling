@@ -3,7 +3,7 @@
  * Handles user authentication, registration, profile management, and password operations
  */
 
-import apiClient from './api'
+import { usersApi as apiClient } from './api'
 import type {
   User,
   LoginCredentials,

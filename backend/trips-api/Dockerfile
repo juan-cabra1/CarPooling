@@ -25,8 +25,9 @@ RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
 
 # Download all dependencies
-# This creates a separate cached layer for dependencies
-RUN go mod download && go mod verify
+# GONOSUMDB=* and GOFLAGS=-mod=mod allow go.sum to be updated during build
+# when new dependencies (e.g., gorilla/websocket) are added without running go get locally
+RUN GONOSUMDB=* GOFLAGS=-mod=mod go mod download
 
 # Copy the entire source code structure
 # This includes:
@@ -43,7 +44,7 @@ COPY . .
 # - -ldflags="-w -s": Strip debug information and symbol table (reduces binary size)
 #   * -w: Omit DWARF symbol table
 #   * -s: Omit symbol table and debug information
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS=linux GONOSUMDB=* GOFLAGS=-mod=mod go build \
     -a \
     -installsuffix cgo \
     -ldflags="-w -s" \

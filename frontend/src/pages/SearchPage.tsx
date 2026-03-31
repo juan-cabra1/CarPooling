@@ -39,6 +39,9 @@ export default function SearchPage() {
   const [minSeats, setMinSeats] = useState<number | undefined>(undefined)
   const [maxPrice, setMaxPrice] = useState<number | undefined>(undefined)
   const [sortOption, setSortOption] = useState('departure_time|asc')
+  const [petsAllowed, setPetsAllowed] = useState<boolean | undefined>(undefined)
+  const [smokingAllowed, setSmokingAllowed] = useState<boolean | undefined>(undefined)
+  const [musicAllowed, setMusicAllowed] = useState<boolean | undefined>(undefined)
 
   // Initialize from URL params on mount
   useEffect(() => {
@@ -153,6 +156,9 @@ export default function SearchPage() {
       if (departureDate) query.departure_date = departureDate
       if (minSeats) query.min_seats = minSeats
       if (maxPrice) query.max_price = maxPrice
+      if (petsAllowed !== undefined) query.pets_allowed = petsAllowed
+      if (smokingAllowed !== undefined) query.smoking_allowed = smokingAllowed
+      if (musicAllowed !== undefined) query.music_allowed = musicAllowed
 
       // Parse and add sorting from combined option
       const [sortBy, sortOrder] = sortOption.split('|') as [SearchSortBy, SearchSortOrder]
@@ -224,6 +230,9 @@ export default function SearchPage() {
     setMinSeats(undefined)
     setMaxPrice(undefined)
     setSortOption('departure_time|asc')
+    setPetsAllowed(undefined)
+    setSmokingAllowed(undefined)
+    setMusicAllowed(undefined)
     setTrips([])
     setTotal(0)
     setValidationError('')
@@ -465,6 +474,43 @@ export default function SearchPage() {
                         <option value="rating|desc">Mejor calificación</option>
                         <option value="popularity|desc">Más popular</option>
                       </select>
+                    </div>
+
+                    {/* Preference Filters */}
+                    <div className="md:col-span-3 pt-2 border-t">
+                      <Label className="block mb-3">Preferencias del conductor</Label>
+                      <div className="flex flex-wrap gap-6">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id="pets_allowed"
+                            checked={petsAllowed === true}
+                            onCheckedChange={(checked) => setPetsAllowed(checked ? true : undefined)}
+                          />
+                          <label htmlFor="pets_allowed" className="text-sm font-medium cursor-pointer">
+                            🐕 Permite mascotas
+                          </label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id="smoking_allowed"
+                            checked={smokingAllowed === true}
+                            onCheckedChange={(checked) => setSmokingAllowed(checked ? true : undefined)}
+                          />
+                          <label htmlFor="smoking_allowed" className="text-sm font-medium cursor-pointer">
+                            🚬 Permite fumar
+                          </label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id="music_allowed"
+                            checked={musicAllowed === true}
+                            onCheckedChange={(checked) => setMusicAllowed(checked ? true : undefined)}
+                          />
+                          <label htmlFor="music_allowed" className="text-sm font-medium cursor-pointer">
+                            🎵 Permite música
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { tripsService, searchService, chatService, getErrorMessage } from '@/services'
+import { tripsService, searchService, chatService, paymentsService, getErrorMessage } from '@/services'
 import type { Message } from '@/services'
 import { useAuth } from '@/context/AuthContext'
 import BookingModal from '@/components/BookingModal'
@@ -27,17 +27,46 @@ export default function TripDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
 
+  // Map state
+  const [mapEmbedURL, setMapEmbedURL] = useState<string | null>(null)
+
   // Chat states
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
+  const [wsConnected, setWsConnected] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
     if (id) {
       fetchTrip()
     }
   }, [id])
+
+  // Load Google Maps route embed when trip data is available
+  useEffect(() => {
+    if (!trip) return
+    const { coordinates: origCoords } = trip.origin
+    const { coordinates: destCoords } = trip.destination
+    // SearchLocation uses GeoJSON [lng, lat]; fall back to city+province if missing
+    if (origCoords && destCoords && 'coordinates' in origCoords) {
+      const [oLng, oLat] = (origCoords as { coordinates: [number, number] }).coordinates
+      const [dLng, dLat] = (destCoords as { coordinates: [number, number] }).coordinates
+      paymentsService.getRouteEmbedURL(oLat, oLng, dLat, dLng)
+        .then(setMapEmbedURL)
+        .catch(() => {/* silently ignore — map is non-critical */})
+    } else {
+      // Trip type: coordinates has { lat, lng }
+      const o = origCoords as { lat: number; lng: number } | undefined
+      const d = destCoords as { lat: number; lng: number } | undefined
+      if (o?.lat && d?.lat) {
+        paymentsService.getRouteEmbedURL(o.lat, o.lng, d.lat, d.lng)
+          .then(setMapEmbedURL)
+          .catch(() => {})
+      }
+    }
+  }, [trip])
 
   const fetchTrip = async () => {
     if (!id) return
@@ -153,22 +182,42 @@ export default function TripDetailPage() {
     }
   }
 
-  // Load messages on mount
-  useEffect(() => {
-    if (user && id) {
-      loadMessages()
-    }
-  }, [id, user])
-
-  // Auto-refresh messages every 5 seconds
+  // Connect WebSocket for real-time chat (replaces polling)
   useEffect(() => {
     if (!user || !id) return
 
-    const interval = setInterval(() => {
-      loadMessages()
-    }, 5000)
+    // Load message history via HTTP first
+    loadMessages()
 
-    return () => clearInterval(interval)
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    const wsUrl = chatService.getChatWebSocketURL(id, token)
+    const socket = new WebSocket(wsUrl)
+    wsRef.current = socket
+
+    socket.onopen = () => setWsConnected(true)
+
+    socket.onmessage = (event) => {
+      try {
+        const newMsg: Message = JSON.parse(event.data)
+        setMessages(prev => {
+          if (prev.find(m => m.id === newMsg.id)) return prev
+          return [...prev, newMsg]
+        })
+      } catch {}
+    }
+
+    socket.onerror = () => setWsConnected(false)
+
+    socket.onclose = () => {
+      setWsConnected(false)
+      wsRef.current = null
+    }
+
+    return () => {
+      socket.close()
+    }
   }, [id, user])
 
   // Auto-scroll to bottom when new messages arrive
@@ -378,6 +427,28 @@ export default function TripDetailPage() {
                 </div>
               )}
 
+              {/* Route Map */}
+              {mapEmbedURL && (
+                <div className="pt-6 border-t">
+                  <h3 className="font-semibold text-gray-900 mb-3 text-lg flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-primary" />
+                    Ruta del viaje
+                  </h3>
+                  <div className="rounded-lg overflow-hidden border border-gray-200">
+                    <iframe
+                      src={mapEmbedURL}
+                      width="100%"
+                      height="320"
+                      style={{ border: 0 }}
+                      allowFullScreen
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      title="Ruta del viaje"
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Description */}
               {trip.description && (
                 <div className="pt-6 border-t">
@@ -546,7 +617,7 @@ export default function TripDetailPage() {
                 </div>
 
                 <p className="text-xs text-gray-500 mt-2">
-                  💡 Los mensajes se actualizan automáticamente cada 5 segundos
+                  {wsConnected ? '🟢 Chat en tiempo real' : '⚪ Conectando al chat...'}
                 </p>
               </CardContent>
             </Card>

@@ -33,8 +33,39 @@ type Trip struct {
 	CancelledBy        *int64     `json:"cancelled_by,omitempty" bson:"cancelled_by,omitempty"`
 	CancellationReason string     `json:"cancellation_reason,omitempty" bson:"cancellation_reason,omitempty"`
 
+	// Tracking fields for real-time location
+	CurrentLocation *Coordinates    `json:"current_location,omitempty" bson:"current_location,omitempty"`
+	LocationHistory []LocationPoint `json:"location_history,omitempty" bson:"location_history,omitempty"`
+	TripProgress    *TripProgress   `json:"trip_progress,omitempty" bson:"trip_progress,omitempty"`
+	StartedAt       *time.Time      `json:"started_at,omitempty" bson:"started_at,omitempty"`
+	CompletedAt     *time.Time      `json:"completed_at,omitempty" bson:"completed_at,omitempty"`
+
 	CreatedAt time.Time `json:"created_at" bson:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" bson:"updated_at"`
+}
+
+// LocationPoint represents a GPS point with timestamp
+type LocationPoint struct {
+	Lat       float64   `json:"lat" bson:"lat"`
+	Lng       float64   `json:"lng" bson:"lng"`
+	Timestamp time.Time `json:"timestamp" bson:"timestamp"`
+	Speed     float64   `json:"speed,omitempty" bson:"speed,omitempty"`
+	Heading   float64   `json:"heading,omitempty" bson:"heading,omitempty"`
+}
+
+// TripProgress represents real-time trip progress
+type TripProgress struct {
+	DistanceTraveled       float64   `json:"distance_traveled" bson:"distance_traveled"`
+	EstimatedTimeRemaining int       `json:"estimated_time_remaining" bson:"estimated_time_remaining"`
+	LastUpdated            time.Time `json:"last_updated" bson:"last_updated"`
+}
+
+// UnixToTime converts a Unix timestamp in milliseconds to time.Time
+func UnixToTime(timestamp int64) time.Time {
+	if timestamp == 0 {
+		return time.Now()
+	}
+	return time.Unix(0, timestamp*int64(time.Millisecond))
 }
 
 // CreateTripRequest representa la solicitud para crear un nuevo viaje

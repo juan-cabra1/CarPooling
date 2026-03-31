@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { X, Users, DollarSign, AlertCircle, CheckCircle } from 'lucide-react'
+import { X, Users, DollarSign, AlertCircle, CheckCircle, CreditCard, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { bookingsService, getErrorMessage } from '@/services'
+import { bookingsService, paymentsService, getErrorMessage } from '@/services'
 import { useAuth } from '@/context/AuthContext'
 import type { Trip, SearchTrip } from '@/types'
+import type { Booking } from '@/types/booking'
+import type { CreatePreferenceResponse } from '@/types/payment'
 
 interface BookingModalProps {
   trip: Trip | SearchTrip
@@ -14,12 +16,16 @@ interface BookingModalProps {
   onSuccess: () => void
 }
 
+type Step = 'booking' | 'payment'
+
 export default function BookingModal({ trip, isOpen, onClose, onSuccess }: BookingModalProps) {
   const { user } = useAuth()
+  const [step, setStep] = useState<Step>('booking')
   const [seatsRequested, setSeatsRequested] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
+  const [booking, setBooking] = useState<Booking | null>(null)
+  const [preference, setPreference] = useState<CreatePreferenceResponse | null>(null)
 
   // Handle both Trip and SearchTrip types
   const tripId = 'trip_id' in trip ? trip.trip_id : trip.id
@@ -33,19 +39,18 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
     }).format(price)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Step 1: create booking
+  const handleSubmitBooking = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!user) {
-      setError('Debes iniciar sesi�n para reservar')
+      setError('Debés iniciar sesión para reservar')
       return
     }
-
     if (seatsRequested < 1) {
-      setError('Debes reservar al menos 1 asiento')
+      setError('Debés reservar al menos 1 asiento')
       return
     }
-
     if (seatsRequested > trip.available_seats) {
       setError(`Solo hay ${trip.available_seats} asientos disponibles`)
       return
@@ -55,17 +60,29 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
       setLoading(true)
       setError('')
 
-      await bookingsService.createBooking({
+      const newBooking = await bookingsService.createBooking({
         trip_id: tripId,
         passenger_id: user.id,
         seats_reserved: seatsRequested,
       })
+      setBooking(newBooking)
 
-      setSuccess(true)
-      setTimeout(() => {
-        onSuccess()
-        handleClose()
-      }, 2000)
+      // Step 2: create MercadoPago preference
+      const pref = await paymentsService.createPreference({
+        booking_id: newBooking.id,
+        trip_id: tripId,
+        driver_id: String(trip.driver_id),
+        seats_count: seatsRequested,
+        price_per_seat: Math.round(trip.price_per_seat * 100), // ARS → centavos
+        origin: `${trip.origin.city}, ${trip.origin.province}`,
+        destination: `${trip.destination.city}, ${trip.destination.province}`,
+        departure_at: trip.departure_datetime,
+        payer_email: user.email,
+        payer_name: user.name,
+        return_base_url: window.location.origin,
+      })
+      setPreference(pref)
+      setStep('payment')
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -73,11 +90,23 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
     }
   }
 
+  // Redirect to MercadoPago checkout
+  const handleGoToPayment = () => {
+    if (!preference) return
+    // In production use init_point; in sandbox use sandbox_init_point
+    const checkoutURL = import.meta.env.VITE_MP_SANDBOX === 'true'
+      ? preference.sandbox_init_point
+      : preference.init_point
+    window.location.href = checkoutURL
+  }
+
   const handleClose = () => {
     if (!loading) {
       setSeatsRequested(1)
       setError('')
-      setSuccess(false)
+      setStep('booking')
+      setBooking(null)
+      setPreference(null)
       onClose()
     }
   }
@@ -89,7 +118,9 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-2xl font-bold text-gray-900">Reservar Asientos</h2>
+          <h2 className="text-2xl font-bold text-gray-900">
+            {step === 'booking' ? 'Reservar Asientos' : 'Confirmar Pago'}
+          </h2>
           <button
             onClick={handleClose}
             disabled={loading}
@@ -101,22 +132,13 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
 
         {/* Content */}
         <div className="p-6">
-          {success ? (
-            <div className="text-center py-8">
-              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-gray-900 mb-2">
-                �Reserva exitosa!
-              </h3>
-              <p className="text-gray-600">
-                Tu reserva ha sido creada. Redirigiendo...
-              </p>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-6">
+          {/* ── Step 1: Booking form ── */}
+          {step === 'booking' && (
+            <form onSubmit={handleSubmitBooking} className="space-y-6">
               {/* Trip Info */}
               <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                 <div className="font-semibold text-gray-900">
-                  {trip.origin.city} � {trip.destination.city}
+                  {trip.origin.city} → {trip.destination.city}
                 </div>
                 <div className="text-sm text-gray-600">
                   {new Intl.DateTimeFormat('es-AR', {
@@ -154,7 +176,11 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
                     min="1"
                     max={trip.available_seats}
                     value={seatsRequested}
-                    onChange={(e) => setSeatsRequested(Math.max(1, Math.min(trip.available_seats, parseInt(e.target.value) || 1)))}
+                    onChange={(e) =>
+                      setSeatsRequested(
+                        Math.max(1, Math.min(trip.available_seats, parseInt(e.target.value) || 1))
+                      )
+                    }
                     disabled={loading}
                     className="text-center text-lg font-semibold w-24"
                   />
@@ -162,14 +188,16 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setSeatsRequested(Math.min(trip.available_seats, seatsRequested + 1))}
+                    onClick={() =>
+                      setSeatsRequested(Math.min(trip.available_seats, seatsRequested + 1))
+                    }
                     disabled={seatsRequested >= trip.available_seats || loading}
                   >
                     +
                   </Button>
                 </div>
                 <p className="text-sm text-gray-500 mt-2">
-                  M�ximo: {trip.available_seats} asientos
+                  Máximo: {trip.available_seats} asientos
                 </p>
               </div>
 
@@ -196,7 +224,6 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
                 </div>
               </div>
 
-              {/* Error Message */}
               {error && (
                 <div className="flex items-start gap-2 p-4 bg-red-50 border border-red-200 rounded-lg">
                   <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -204,7 +231,6 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
                 </div>
               )}
 
-              {/* Action Buttons */}
               <div className="flex gap-3 pt-4">
                 <Button
                   type="button"
@@ -215,25 +241,76 @@ export default function BookingModal({ trip, isOpen, onClose, onSuccess }: Booki
                 >
                   Cancelar
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1"
-                >
+                <Button type="submit" disabled={loading} className="flex-1">
                   {loading ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Reservando...
+                      Procesando...
                     </>
                   ) : (
                     <>
                       <CheckCircle className="w-4 h-4 mr-2" />
-                      Confirmar Reserva
+                      Continuar al pago
                     </>
                   )}
                 </Button>
               </div>
             </form>
+          )}
+
+          {/* ── Step 2: Payment confirmation ── */}
+          {step === 'payment' && preference && booking && (
+            <div className="space-y-6">
+              <div className="text-center py-2">
+                <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                <h3 className="text-lg font-bold text-gray-900">¡Reserva creada!</h3>
+                <p className="text-gray-600 text-sm mt-1">
+                  Tu reserva fue registrada. Ahora completá el pago para confirmarla.
+                </p>
+              </div>
+
+              {/* Payment summary */}
+              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">{trip.origin.city} → {trip.destination.city}</span>
+                  <span className="font-medium">{seatsRequested} asiento{seatsRequested > 1 ? 's' : ''}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Total a pagar</span>
+                  <span className="font-bold text-primary text-lg">
+                    {formatPrice(preference.amount / 100)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>Fee de plataforma</span>
+                  <span>{formatPrice(preference.platform_fee / 100)}</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-500 text-center">
+                Serás redirigido a MercadoPago para completar el pago de forma segura.
+              </p>
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    // Booking was already created; just close and navigate
+                    onSuccess()
+                    handleClose()
+                  }}
+                  className="flex-1"
+                >
+                  Pagar después
+                </Button>
+                <Button onClick={handleGoToPayment} className="flex-1 gap-2">
+                  <CreditCard className="w-4 h-4" />
+                  Pagar con MercadoPago
+                  <ExternalLink className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       </div>

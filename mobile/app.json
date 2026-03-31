@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "frontendmobile",
+    "slug": "frontendmobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.marcelonelson.carpooling",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "location"
+        ],
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "CarPooling necesita acceso a tu ubicación en background para compartirla con los pasajeros durante el viaje.",
+        "NSLocationAlwaysUsageDescription": "CarPooling necesita acceso a tu ubicación en background para compartirla con los pasajeros durante el viaje."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyB6yd213-yNM-TX5Ot6a-78da0AaeLoP0o"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "googleMapsApiKey": "AIzaSyB6yd213-yNM-TX5Ot6a-78da0AaeLoP0o"
+    },
+    "scheme": "carpooling",
+    "packagerOpts": {
+      "config": "babel.config.js"
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
+  }
+}

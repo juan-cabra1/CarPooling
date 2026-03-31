@@ -29,3 +29,7 @@ export * from './ratingsService'
 // Export chat service
 export { default as chatService } from './chatService'
 export * from './chatService'
+
+// Export payments service
+export { default as paymentsService } from './paymentsService'
+export * from './paymentsService'

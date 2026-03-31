@@ -33,20 +33,21 @@ func SetupRoutes(
 	// ==================== RUTAS PÚBLICAS (sin autenticación) ====================
 
 	// Registro y Login
-	router.POST("/users", authController.Register)
-	router.POST("/login", authController.Login)
+	router.POST("/users", middleware.RateLimitMiddleware(20), authController.Register)
+	router.POST("/login", middleware.RateLimitMiddleware(10), authController.Login)
 
 	// Verificación de email y recuperación de contraseña
 	router.GET("/verify-email", authController.VerifyEmail)
-	router.POST("/resend-verification", authController.ResendVerificationEmail)
-	router.POST("/forgot-password", authController.RequestPasswordReset)
-	router.POST("/reset-password", authController.ResetPassword)
+	router.POST("/resend-verification", middleware.RateLimitMiddleware(5), authController.ResendVerificationEmail)
+	router.POST("/forgot-password", middleware.RateLimitMiddleware(5), authController.RequestPasswordReset)
+	router.POST("/reset-password", middleware.RateLimitMiddleware(10), authController.ResetPassword)
 
 	// ==================== RUTAS PROTEGIDAS (requieren JWT + Email verificado) ====================
 
 	protected := router.Group("/")
 	protected.Use(middleware.AuthMiddleware(authService))
 	protected.Use(middleware.RequireVerifiedEmail(userRepo))
+	protected.Use(middleware.RateLimitMiddleware(120))
 	{
 		// Perfil de usuario
 		protected.GET("/users/me", userController.GetMe)
@@ -72,9 +73,10 @@ func SetupRoutes(
 		admin.POST("/users/:id/force-reauth", userController.ForceReauthentication)
 	}
 
-	// ==================== RUTAS INTERNAS (sin autenticación, para comunicación entre servicios) ====================
+	// ==================== RUTAS INTERNAS (requieren X-Internal-Token, para comunicación entre servicios) ====================
 
 	internal := router.Group("/internal")
+	internal.Use(middleware.InternalAuthMiddleware())
 	{
 		// Obtener usuario (llamado desde search-api y otros servicios)
 		internal.GET("/users/:id", userController.GetUserByID)

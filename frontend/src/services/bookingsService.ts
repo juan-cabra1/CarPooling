@@ -4,7 +4,7 @@
  * Note: All endpoints require authentication
  */
 
-import apiClient from './api'
+import { bookingsApi as apiClient } from './api'
 import type {
   Booking,
   CreateBookingRequest,

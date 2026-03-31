@@ -33,6 +33,25 @@ interface ImportMetaEnv {
    * @example 'http://localhost:8004'
    */
   readonly VITE_SEARCH_API_URL: string
+
+  /**
+   * Payments API URL (Port 8005)
+   * Handles MercadoPago, wallet, withdrawals, seller accounts
+   * @example 'https://payments-api-xxx.up.railway.app'
+   */
+  readonly VITE_PAYMENTS_API_URL: string
+
+  /**
+   * WebSocket URL for trips-api real-time chat
+   * @example 'wss://trips-api-xxx.up.railway.app/trips'
+   */
+  readonly VITE_TRIPS_WS_URL: string
+
+  /**
+   * Set to 'true' to use MercadoPago sandbox checkout URLs
+   * @example 'true'
+   */
+  readonly VITE_MP_SANDBOX: string
 }
 
 interface ImportMeta {

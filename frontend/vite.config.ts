@@ -79,6 +79,33 @@ export default defineConfig({
         target: 'http://localhost:8004',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/search/, '/api/v1/search')
+      },
+      // Payments API
+      '/api/payments': {
+        target: 'http://localhost:8005',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/payments/, '/api/v1/payments')
+      },
+      '/api/wallet': {
+        target: 'http://localhost:8005',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/wallet/, '/api/v1/wallet')
+      },
+      '/api/withdrawals': {
+        target: 'http://localhost:8005',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/withdrawals/, '/api/v1/withdrawals')
+      },
+      '/api/seller': {
+        target: 'http://localhost:8005',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/seller/, '/api/v1/seller')
+      },
+      // Google Maps route embed (trips-api, server-side key)
+      '/api/route': {
+        target: 'http://localhost:8002',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/route/, '/route')
       }
     }
   }

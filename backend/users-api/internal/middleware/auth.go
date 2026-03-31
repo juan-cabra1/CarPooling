@@ -48,19 +48,35 @@ func AuthMiddleware(authService service.AuthService) gin.HandlerFunc {
 		}
 
 		// Extraer claims
-		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-			// Guardar claims en el contexto
-			c.Set("user_id", int64(claims["user_id"].(float64)))
-			c.Set("email", claims["email"].(string))
-			c.Set("role", claims["role"].(string))
-		} else {
-			c.JSON(401, gin.H{
-				"success": false,
-				"error":   "claims del token inválidos",
-			})
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok || !token.Valid {
+			c.JSON(401, gin.H{"success": false, "error": "claims del token inválidos"})
 			c.Abort()
 			return
 		}
+
+		userIDFloat, ok := claims["user_id"].(float64)
+		if !ok {
+			c.JSON(401, gin.H{"success": false, "error": "token inválido: user_id faltante"})
+			c.Abort()
+			return
+		}
+		email, ok := claims["email"].(string)
+		if !ok {
+			c.JSON(401, gin.H{"success": false, "error": "token inválido: email faltante"})
+			c.Abort()
+			return
+		}
+		role, ok := claims["role"].(string)
+		if !ok {
+			c.JSON(401, gin.H{"success": false, "error": "token inválido: role faltante"})
+			c.Abort()
+			return
+		}
+
+		c.Set("user_id", int64(userIDFloat))
+		c.Set("email", email)
+		c.Set("role", role)
 
 		c.Next()
 	}

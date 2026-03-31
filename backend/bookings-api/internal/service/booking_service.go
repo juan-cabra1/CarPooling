@@ -25,6 +25,9 @@ type BookingService interface {
 	// GetPassengerBookings retrieves all bookings for a passenger with pagination
 	GetPassengerBookings(ctx context.Context, passengerID int64, page, limit int) (*domain.BookingListResponse, error)
 
+	// GetTripBookings retrieves all bookings for a specific trip (driver only)
+	GetTripBookings(ctx context.Context, tripID string, userID int64, page, limit int) (*domain.BookingListResponse, error)
+
 	// GetAllBookings retrieves all bookings in the system with pagination and filters (admin only)
 	GetAllBookings(ctx context.Context, page, limit int, statusFilter, tripIDFilter string, passengerIDFilter int64) ([]*domain.BookingResponse, int64, error)
 
@@ -308,6 +311,49 @@ func (s *bookingService) CancelBooking(ctx context.Context, bookingID string, us
 	}
 
 	return nil
+}
+
+// GetTripBookings retrieves all bookings for a trip — only accessible by the driver
+// Authorization: userID must match driver_id in at least one confirmed booking for this trip
+func (s *bookingService) GetTripBookings(ctx context.Context, tripID string, userID int64, page, limit int) (*domain.BookingListResponse, error) {
+	bookings, err := s.bookingRepo.FindByTripID(tripID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trip bookings: %w", err)
+	}
+
+	// Authorization: verify the user is the driver of this trip
+	// driver_id is set on confirmed bookings; check if any booking has this driver
+	isDriver := false
+	for _, b := range bookings {
+		if b.DriverID == userID {
+			isDriver = true
+			break
+		}
+	}
+	if !isDriver {
+		return nil, domain.ErrUnauthorized.WithMessage("Only the trip driver can view trip bookings")
+	}
+
+	// Apply pagination manually
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 50
+	}
+	start := (page - 1) * limit
+	total := int64(len(bookings))
+	if start >= len(bookings) {
+		bookings = []dao.Booking{}
+	} else {
+		end := start + limit
+		if end > len(bookings) {
+			end = len(bookings)
+		}
+		bookings = bookings[start:end]
+	}
+
+	return domain.NewBookingListResponse(bookings, total, page, limit), nil
 }
 
 // GetAllBookings retrieves all bookings in the system with pagination and filters (admin only)

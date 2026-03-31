@@ -17,6 +17,7 @@ type BookingResponse struct {
 	ID                 string     `json:"id"`
 	TripID             string     `json:"trip_id"`
 	PassengerID        int64      `json:"passenger_id"`
+	DriverID           int64      `json:"driver_id,omitempty"`
 	SeatsRequested     int        `json:"seats_requested"`
 	TotalPrice         float64    `json:"total_price"`
 	Status             string     `json:"status"`
@@ -59,6 +60,7 @@ func ToBookingResponse(b *dao.Booking) *BookingResponse {
 		ID:                 b.BookingUUID,
 		TripID:             b.TripID,
 		PassengerID:        b.PassengerID,
+		DriverID:           b.DriverID,
 		SeatsRequested:     b.SeatsRequested,
 		TotalPrice:         b.TotalPrice,
 		Status:             b.Status,

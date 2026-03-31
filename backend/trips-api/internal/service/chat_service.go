@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"trips-api/internal/dao"
 	"trips-api/internal/messaging"
 	"trips-api/internal/repository"
+	ws "trips-api/internal/websocket"
 )
 
 // ChatService defines the interface for chat operations
@@ -23,6 +25,7 @@ type chatService struct {
 	messageRepo repository.MessageRepository
 	tripRepo    repository.TripRepository
 	publisher   messaging.Publisher
+	hub         *ws.Hub
 }
 
 // NewChatService creates a new chat service instance
@@ -30,11 +33,13 @@ func NewChatService(
 	messageRepo repository.MessageRepository,
 	tripRepo repository.TripRepository,
 	publisher messaging.Publisher,
+	hub *ws.Hub,
 ) ChatService {
 	return &chatService{
 		messageRepo: messageRepo,
 		tripRepo:    tripRepo,
 		publisher:   publisher,
+		hub:         hub,
 	}
 }
 
@@ -204,6 +209,13 @@ func (s *chatService) SendMessage(ctx context.Context, tripID string, userID int
 		Str("trip_id", tripID).
 		Dur("total_duration", totalDuration).
 		Msg("✅ Chat message processed successfully with CONCURRENT operations")
+
+	// Broadcast message to all WebSocket clients connected to this trip room
+	if s.hub != nil {
+		if payload, err := json.Marshal(msg); err == nil {
+			go s.hub.Broadcast(tripID, payload)
+		}
+	}
 
 	return msg, nil
 }
