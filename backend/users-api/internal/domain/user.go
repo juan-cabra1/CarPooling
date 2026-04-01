@@ -22,6 +22,23 @@ type UserDTO struct {
 	Birthdate           time.Time `json:"birthdate"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+
+	// Verification fields
+	DNI                string     `json:"dni,omitempty"`
+	DNIPhotoURL        string     `json:"dni_photo_url,omitempty"`
+	DNIVerified        bool       `json:"dni_verified"`
+	DNIVerifiedAt      *time.Time `json:"dni_verified_at,omitempty"`
+	LicenseNumber      string     `json:"license_number,omitempty"`
+	LicensePhotoURL    string     `json:"license_photo_url,omitempty"`
+	LicenseVerified    bool       `json:"license_verified"`
+	LicenseVerifiedAt  *time.Time `json:"license_verified_at,omitempty"`
+	VerificationStatus string     `json:"verification_status"`
+	RejectionReason    string     `json:"rejection_reason,omitempty"`
+
+	// Block fields
+	IsBlocked     bool       `json:"is_blocked"`
+	BlockedAt     *time.Time `json:"blocked_at,omitempty"`
+	BlockedReason string     `json:"blocked_reason,omitempty"`
 }
 
 // CreateUserRequest representa los datos necesarios para crear un usuario
@@ -75,4 +92,24 @@ type ResetPasswordRequest struct {
 // ResendVerificationRequest representa la solicitud para reenviar email de verificación
 type ResendVerificationRequest struct {
 	Email string `json:"email" binding:"required,email"`
+}
+
+// SubmitVerificationRequest - usuario envía info de DNI o licencia
+type SubmitVerificationRequest struct {
+	DNI             *string `json:"dni"`
+	DNIPhotoURL     *string `json:"dni_photo_url"`
+	LicenseNumber   *string `json:"license_number"`
+	LicensePhotoURL *string `json:"license_photo_url"`
+}
+
+// ReviewVerificationRequest - admin aprueba o rechaza
+type ReviewVerificationRequest struct {
+	Action           string `json:"action" binding:"required,oneof=approve reject"`
+	VerificationType string `json:"verification_type" binding:"required,oneof=dni license"`
+	Reason           string `json:"reason"`
+}
+
+// BlockUserRequest - admin bloquea a un usuario
+type BlockUserRequest struct {
+	Reason string `json:"reason" binding:"required"`
 }

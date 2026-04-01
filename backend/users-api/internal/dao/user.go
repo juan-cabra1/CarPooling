@@ -26,6 +26,23 @@ type UserDAO struct {
 	Birthdate             time.Time  `gorm:"not null;column:birthdate"`
 	CreatedAt             time.Time  `gorm:"autoCreateTime;column:created_at"`
 	UpdatedAt             time.Time  `gorm:"autoUpdateTime;column:updated_at"`
+
+	// Verification fields
+	DNI                string     `gorm:"column:dni;size:20"`
+	DNIPhotoURL        string     `gorm:"column:dni_photo_url;size:500"`
+	DNIVerified        bool       `gorm:"column:dni_verified;default:false"`
+	DNIVerifiedAt      *time.Time `gorm:"column:dni_verified_at"`
+	LicenseNumber      string     `gorm:"column:license_number;size:50"`
+	LicensePhotoURL    string     `gorm:"column:license_photo_url;size:500"`
+	LicenseVerified    bool       `gorm:"column:license_verified;default:false"`
+	LicenseVerifiedAt  *time.Time `gorm:"column:license_verified_at"`
+	VerificationStatus string     `gorm:"column:verification_status;type:varchar(20);default:'none'"`
+	RejectionReason    string     `gorm:"column:rejection_reason;type:text"`
+
+	// Block fields
+	IsBlocked     bool       `gorm:"column:is_blocked;default:false"`
+	BlockedAt     *time.Time `gorm:"column:blocked_at"`
+	BlockedReason string     `gorm:"column:blocked_reason;type:text"`
 }
 
 // TableName especifica el nombre de la tabla en la base de datos

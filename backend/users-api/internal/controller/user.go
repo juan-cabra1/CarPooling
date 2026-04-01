@@ -16,6 +16,8 @@ type UserController interface {
 	UpdateUser(c *gin.Context)
 	DeleteUser(c *gin.Context)
 	ForceReauthentication(c *gin.Context)
+	BlockUser(c *gin.Context)
+	UnblockUser(c *gin.Context)
 }
 
 type userController struct {
@@ -300,4 +302,54 @@ func (ctrl *userController) ForceReauthentication(c *gin.Context) {
 		"success": true,
 		"data":    gin.H{"message": "email de verificación enviado exitosamente"},
 	})
+}
+
+// BlockUser bloquea a un usuario (solo admin)
+// POST /admin/users/:id/block
+func (ctrl *userController) BlockUser(c *gin.Context) {
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "ID inválido"})
+		return
+	}
+
+	var req domain.BlockUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "datos inválidos: " + err.Error()})
+		return
+	}
+
+	if err := ctrl.userService.BlockUser(id, req.Reason); err != nil {
+		if err.Error() == "usuario no encontrado" {
+			c.JSON(404, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"success": true, "data": gin.H{"message": "usuario bloqueado"}})
+}
+
+// UnblockUser desbloquea a un usuario (solo admin)
+// POST /admin/users/:id/unblock
+func (ctrl *userController) UnblockUser(c *gin.Context) {
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(400, gin.H{"success": false, "error": "ID inválido"})
+		return
+	}
+
+	if err := ctrl.userService.UnblockUser(id); err != nil {
+		if err.Error() == "usuario no encontrado" {
+			c.JSON(404, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+		c.JSON(500, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"success": true, "data": gin.H{"message": "usuario desbloqueado"}})
 }

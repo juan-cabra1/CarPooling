@@ -18,6 +18,7 @@ type TripController interface {
 	UpdateTrip(c *gin.Context)
 	DeleteTrip(c *gin.Context)
 	PatchTripStatus(c *gin.Context)
+	GetMyTrips(c *gin.Context)
 }
 
 type tripController struct {
@@ -342,4 +343,47 @@ func (ctrl *tripController) PatchTripStatus(c *gin.Context) {
 // handleTripError is an alias for handleServiceError for trip status operations
 func handleTripError(c *gin.Context, err error) {
 	handleServiceError(c, err)
+}
+
+// GetMyTrips retorna los viajes del usuario autenticado como conductor
+// GET /trips/my-trips?page=1&limit=20
+// Requiere autenticación (JWT)
+func (ctrl *tripController) GetMyTrips(c *gin.Context) {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "usuario no autenticado"})
+		return
+	}
+	userID := userIDVal.(int64)
+
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "20")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	filters := map[string]interface{}{"driver_id": userID}
+	trips, total, err := ctrl.tripService.ListTrips(c.Request.Context(), filters, page, limit)
+	if err != nil {
+		handleServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"trips": trips,
+			"total": total,
+			"page":  page,
+			"limit": limit,
+		},
+	})
 }

@@ -38,6 +38,7 @@ func SetupRoutes(
 	protected.Use(jwtMiddleware)
 	protected.Use(middleware.RateLimitMiddleware(120))
 	{
+		protected.GET("/my-trips", tripController.GetMyTrips)
 		protected.POST("", tripController.CreateTrip)
 		protected.PUT("/:id", tripController.UpdateTrip)
 		protected.PATCH("/:id", tripController.UpdateTrip)

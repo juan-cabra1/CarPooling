@@ -135,6 +135,20 @@ export async function getMyTrips(
   return getTrips({ driver_id: driverId, page, limit })
 }
 
+/**
+ * Get trips where the authenticated user is the driver (authenticated endpoint)
+ * Uses GET /trips/my-trips which reads user_id from JWT
+ */
+export async function getMyDriverTrips(
+  page = 1,
+  limit = 20
+): Promise<TripListResponse> {
+  const response = await apiClient.get<ApiResponse<TripListResponse>>(
+    `${TRIPS_BASE}/my-trips?page=${page}&limit=${limit}`
+  )
+  return response.data.data!
+}
+
 export default {
   getTrips,
   getTripById,
@@ -142,4 +156,5 @@ export default {
   updateTrip,
   deleteTrip,
   getMyTrips,
+  getMyDriverTrips,
 }

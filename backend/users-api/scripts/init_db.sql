@@ -25,9 +25,25 @@ CREATE TABLE IF NOT EXISTS users (
     birthdate DATE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    -- Campos de verificación de identidad
+    dni VARCHAR(20),
+    dni_photo_url VARCHAR(500),
+    dni_verified BOOLEAN DEFAULT FALSE,
+    dni_verified_at TIMESTAMP NULL,
+    license_number VARCHAR(50),
+    license_photo_url VARCHAR(500),
+    license_verified BOOLEAN DEFAULT FALSE,
+    license_verified_at TIMESTAMP NULL,
+    verification_status VARCHAR(20) DEFAULT 'none',
+    rejection_reason TEXT,
+    -- Campos de bloqueo
+    is_blocked BOOLEAN DEFAULT FALSE,
+    blocked_at TIMESTAMP NULL,
+    blocked_reason TEXT,
     INDEX idx_email (email),
     INDEX idx_email_verification_token (email_verification_token),
-    INDEX idx_password_reset_token (password_reset_token)
+    INDEX idx_password_reset_token (password_reset_token),
+    INDEX idx_verification_status (verification_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Tabla de calificaciones

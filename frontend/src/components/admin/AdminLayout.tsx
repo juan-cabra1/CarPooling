@@ -5,7 +5,8 @@ import {
   Car,
   Menu,
   X,
-  ChevronLeft
+  ChevronLeft,
+  ShieldCheck
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,11 @@ const navItems: NavItem[] = [
     name: 'Viajes',
     path: '/admin/trips',
     icon: <Car className="h-5 w-5" />
+  },
+  {
+    name: 'Verificaciones',
+    path: '/admin/verifications',
+    icon: <ShieldCheck className="h-5 w-5" />
   }
 ];
 

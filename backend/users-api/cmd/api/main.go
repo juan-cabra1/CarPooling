@@ -51,12 +51,13 @@ func main() {
 	authController := controller.NewAuthController(authService)
 	userController := controller.NewUserController(userService)
 	ratingController := controller.NewRatingController(ratingService)
+	verificationController := controller.NewVerificationController(userService)
 
 	// 7. Crear router Gin
 	router := gin.Default()
 
 	// 8. Configurar rutas
-	routes.SetupRoutes(router, authController, userController, ratingController, authService, userRepo)
+	routes.SetupRoutes(router, authController, userController, ratingController, verificationController, authService, userRepo)
 
 	// 9. Iniciar servidor
 	port := ":" + cfg.ServerPort

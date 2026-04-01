@@ -15,6 +15,7 @@ func SetupRoutes(
 	authController controller.AuthController,
 	userController controller.UserController,
 	ratingController controller.RatingController,
+	verificationController controller.VerificationController,
 	authService service.AuthService,
 	userRepo repository.UserRepository,
 ) {
@@ -58,6 +59,10 @@ func SetupRoutes(
 		// Calificaciones de usuario
 		protected.GET("/users/:id/ratings", ratingController.GetUserRatings)
 
+		// Verificación de identidad
+		protected.POST("/users/:id/verification", verificationController.SubmitVerification)
+		protected.GET("/users/:id/verification", verificationController.GetVerificationStatus)
+
 		// Cambio de contraseña
 		protected.POST("/change-password", authController.ChangePassword)
 	}
@@ -71,6 +76,12 @@ func SetupRoutes(
 		// Gestión de usuarios (solo admin)
 		admin.GET("/users", userController.GetAllUsers)
 		admin.POST("/users/:id/force-reauth", userController.ForceReauthentication)
+		admin.POST("/users/:id/block", userController.BlockUser)
+		admin.POST("/users/:id/unblock", userController.UnblockUser)
+
+		// Verificaciones de identidad (solo admin)
+		admin.GET("/verifications", verificationController.GetPendingVerifications)
+		admin.POST("/verifications/:id/review", verificationController.ReviewVerification)
 	}
 
 	// ==================== RUTAS INTERNAS (requieren X-Internal-Token, para comunicación entre servicios) ====================

@@ -21,12 +21,14 @@ import TripDetailPage from '@/pages/TripDetailPage'
 import EditTripPage from '@/pages/EditTripPage'
 import UnauthorizedPage from '@/pages/UnauthorizedPage'
 import WalletPage from '@/pages/WalletPage'
+import VerificationPage from '@/pages/VerificationPage'
 
 // Admin Pages
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage'
 import AdminUsersPage from '@/pages/admin/AdminUsersPage'
 import AdminTripsPage from '@/pages/admin/AdminTripsPage'
 import AdminBookingsPage from '@/pages/admin/AdminBookingsPage'
+import AdminVerificationsPage from '@/pages/admin/AdminVerificationsPage'
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -132,6 +134,11 @@ function App() {
                 <WalletPage />
               </ProtectedRoute>
             } />
+            <Route path="verification" element={
+              <ProtectedRoute>
+                <VerificationPage />
+              </ProtectedRoute>
+            } />
           </Route>
 
           {/* Admin routes */}
@@ -144,6 +151,7 @@ function App() {
             <Route path="users" element={<AdminUsersPage />} />
             <Route path="trips" element={<AdminTripsPage />} />
             <Route path="bookings" element={<AdminBookingsPage />} />
+            <Route path="verifications" element={<AdminVerificationsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

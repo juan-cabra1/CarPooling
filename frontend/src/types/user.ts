@@ -18,6 +18,8 @@ export type UserSex = 'hombre' | 'mujer' | 'otro'
  */
 export type RoleRated = 'conductor' | 'pasajero'
 
+export type VerificationStatus = 'none' | 'pending' | 'verified' | 'rejected'
+
 /**
  * Complete user object as returned by the API
  */
@@ -40,6 +42,21 @@ export interface User {
   birthdate: string // ISO 8601 date string
   created_at: string // ISO 8601 datetime string
   updated_at: string // ISO 8601 datetime string
+  // Verification fields
+  dni?: string
+  dni_photo_url?: string
+  dni_verified?: boolean
+  dni_verified_at?: string
+  license_number?: string
+  license_photo_url?: string
+  license_verified?: boolean
+  license_verified_at?: string
+  verification_status?: VerificationStatus
+  rejection_reason?: string
+  // Blocking fields
+  is_blocked?: boolean
+  blocked_reason?: string
+  blocked_at?: string
 }
 
 /**

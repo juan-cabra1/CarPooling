@@ -58,8 +58,8 @@ export default function TripDetailPage() {
         .catch(() => {/* silently ignore — map is non-critical */})
     } else {
       // Trip type: coordinates has { lat, lng }
-      const o = origCoords as { lat: number; lng: number } | undefined
-      const d = destCoords as { lat: number; lng: number } | undefined
+      const o = origCoords as unknown as { lat: number; lng: number } | undefined
+      const d = destCoords as unknown as { lat: number; lng: number } | undefined
       if (o?.lat && d?.lat) {
         paymentsService.getRouteEmbedURL(o.lat, o.lng, d.lat, d.lng)
           .then(setMapEmbedURL)

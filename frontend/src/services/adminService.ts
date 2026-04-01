@@ -102,11 +102,59 @@ export async function forceReauthentication(userId: number, _email: string): Pro
   return response.data
 }
 
+/**
+ * Block a user (admin only)
+ */
+export async function blockUser(userId: number, reason: string): Promise<void> {
+  await usersApi.post(`/admin/users/${userId}/block`, { reason })
+}
+
+/**
+ * Unblock a user (admin only)
+ */
+export async function unblockUser(userId: number): Promise<void> {
+  await usersApi.post(`/admin/users/${userId}/unblock`)
+}
+
+export interface PendingVerificationsResponse {
+  users: User[]
+  total: number
+}
+
+/**
+ * Get pending identity verifications (admin only)
+ */
+export async function getPendingVerifications(): Promise<PendingVerificationsResponse> {
+  const response = await usersApi.get('/admin/verifications')
+  return response.data.data
+}
+
+/**
+ * Approve or reject a user's identity verification (admin only)
+ */
+export async function reviewVerification(
+  userId: number,
+  action: 'approve' | 'reject',
+  verificationType: 'dni' | 'license',
+  reason?: string
+): Promise<User> {
+  const response = await usersApi.post(`/admin/verifications/${userId}/review`, {
+    action,
+    verification_type: verificationType,
+    reason: reason || '',
+  })
+  return response.data.data
+}
+
 const adminService = {
   getAllUsers,
   getAllBookings,
   getAllTrips,
   forceReauthentication,
+  blockUser,
+  unblockUser,
+  getPendingVerifications,
+  reviewVerification,
 }
 
 export default adminService

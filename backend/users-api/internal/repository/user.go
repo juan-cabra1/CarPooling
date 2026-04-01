@@ -24,6 +24,9 @@ type UserRepository interface {
 	SavePasswordResetToken(userID int64, token string, expiresAt time.Time) error
 	ClearPasswordResetToken(userID int64) error
 	UnverifyEmail(userID int64, email string) error
+	UpdateVerification(userID int64, updates map[string]interface{}) error
+	FindByVerificationStatus(status string) ([]*dao.UserDAO, int64, error)
+	UpdateBlockStatus(userID int64, isBlocked bool, reason string) error
 }
 
 type userRepository struct {
@@ -170,4 +173,34 @@ func (r *userRepository) UnverifyEmail(userID int64, email string) error {
 	return r.db.Model(&dao.UserDAO{}).
 		Where("id = ?", userID).
 		Update("email_verified", false).Error
+}
+
+func (r *userRepository) UpdateVerification(userID int64, updates map[string]interface{}) error {
+	return r.db.Model(&dao.UserDAO{}).Where("id = ?", userID).Updates(updates).Error
+}
+
+func (r *userRepository) FindByVerificationStatus(status string) ([]*dao.UserDAO, int64, error) {
+	var users []*dao.UserDAO
+	var total int64
+	err := r.db.Model(&dao.UserDAO{}).Where("verification_status = ?", status).Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	err = r.db.Where("verification_status = ?", status).Order("created_at ASC").Find(&users).Error
+	return users, total, err
+}
+
+func (r *userRepository) UpdateBlockStatus(userID int64, isBlocked bool, reason string) error {
+	updates := map[string]interface{}{
+		"is_blocked":    isBlocked,
+		"blocked_reason": reason,
+	}
+	if isBlocked {
+		now := time.Now()
+		updates["blocked_at"] = &now
+	} else {
+		updates["blocked_at"] = nil
+		updates["blocked_reason"] = ""
+	}
+	return r.db.Model(&dao.UserDAO{}).Where("id = ?", userID).Updates(updates).Error
 }

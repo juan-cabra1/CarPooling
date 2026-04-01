@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"time"
 	"users-api/internal/dao"
 	"users-api/internal/domain"
 	"users-api/internal/repository"
@@ -17,6 +18,11 @@ type UserService interface {
 	UpdateUser(id int64, req domain.UpdateUserRequest) (*domain.UserDTO, error)
 	DeleteUser(id int64) error
 	ForceReauthentication(id int64) error
+	SubmitVerification(userID int64, req domain.SubmitVerificationRequest) (*domain.UserDTO, error)
+	GetPendingVerifications() ([]*domain.UserDTO, int64, error)
+	ReviewVerification(userID int64, req domain.ReviewVerificationRequest) (*domain.UserDTO, error)
+	BlockUser(userID int64, reason string) error
+	UnblockUser(userID int64) error
 }
 
 type userService struct {
@@ -177,5 +183,120 @@ func (s *userService) convertToDTO(userDAO *dao.UserDAO) *domain.UserDTO {
 		Birthdate:           userDAO.Birthdate,
 		CreatedAt:           userDAO.CreatedAt,
 		UpdatedAt:           userDAO.UpdatedAt,
+		DNI:                userDAO.DNI,
+		DNIPhotoURL:        userDAO.DNIPhotoURL,
+		DNIVerified:        userDAO.DNIVerified,
+		DNIVerifiedAt:      userDAO.DNIVerifiedAt,
+		LicenseNumber:      userDAO.LicenseNumber,
+		LicensePhotoURL:    userDAO.LicensePhotoURL,
+		LicenseVerified:    userDAO.LicenseVerified,
+		LicenseVerifiedAt:  userDAO.LicenseVerifiedAt,
+		VerificationStatus: userDAO.VerificationStatus,
+		RejectionReason:    userDAO.RejectionReason,
+		IsBlocked:          userDAO.IsBlocked,
+		BlockedAt:          userDAO.BlockedAt,
+		BlockedReason:      userDAO.BlockedReason,
 	}
+}
+
+// SubmitVerification - el usuario envía DNI o licencia para verificación
+func (s *userService) SubmitVerification(userID int64, req domain.SubmitVerificationRequest) (*domain.UserDTO, error) {
+	user, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return nil, errors.New("usuario no encontrado")
+	}
+
+	updates := map[string]interface{}{
+		"verification_status": "pending",
+	}
+	if req.DNI != nil {
+		updates["dni"] = *req.DNI
+		user.DNI = *req.DNI
+	}
+	if req.DNIPhotoURL != nil {
+		updates["dni_photo_url"] = *req.DNIPhotoURL
+		user.DNIPhotoURL = *req.DNIPhotoURL
+	}
+	if req.LicenseNumber != nil {
+		updates["license_number"] = *req.LicenseNumber
+		user.LicenseNumber = *req.LicenseNumber
+	}
+	if req.LicensePhotoURL != nil {
+		updates["license_photo_url"] = *req.LicensePhotoURL
+		user.LicensePhotoURL = *req.LicensePhotoURL
+	}
+
+	if err := s.userRepo.UpdateVerification(userID, updates); err != nil {
+		return nil, err
+	}
+
+	user.VerificationStatus = "pending"
+	return s.convertToDTO(user), nil
+}
+
+// GetPendingVerifications - admin obtiene usuarios con verificación pendiente
+func (s *userService) GetPendingVerifications() ([]*domain.UserDTO, int64, error) {
+	users, total, err := s.userRepo.FindByVerificationStatus("pending")
+	if err != nil {
+		return nil, 0, err
+	}
+	dtos := make([]*domain.UserDTO, len(users))
+	for i, u := range users {
+		dtos[i] = s.convertToDTO(u)
+	}
+	return dtos, total, nil
+}
+
+// ReviewVerification - admin aprueba o rechaza la verificación de un usuario
+func (s *userService) ReviewVerification(userID int64, req domain.ReviewVerificationRequest) (*domain.UserDTO, error) {
+	_, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return nil, errors.New("usuario no encontrado")
+	}
+
+	updates := map[string]interface{}{}
+
+	if req.Action == "approve" {
+		now := time.Now()
+		updates["verification_status"] = "verified"
+		updates["rejection_reason"] = ""
+		if req.VerificationType == "dni" {
+			updates["dni_verified"] = true
+			updates["dni_verified_at"] = now
+		} else {
+			updates["license_verified"] = true
+			updates["license_verified_at"] = now
+		}
+	} else {
+		updates["verification_status"] = "rejected"
+		updates["rejection_reason"] = req.Reason
+	}
+
+	if err := s.userRepo.UpdateVerification(userID, updates); err != nil {
+		return nil, err
+	}
+
+	updated, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.convertToDTO(updated), nil
+}
+
+// BlockUser - admin bloquea a un usuario
+func (s *userService) BlockUser(userID int64, reason string) error {
+	_, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return errors.New("usuario no encontrado")
+	}
+	return s.userRepo.UpdateBlockStatus(userID, true, reason)
+}
+
+// UnblockUser - admin desbloquea a un usuario
+func (s *userService) UnblockUser(userID int64) error {
+	_, err := s.userRepo.FindByID(userID)
+	if err != nil {
+		return errors.New("usuario no encontrado")
+	}
+	return s.userRepo.UpdateBlockStatus(userID, false, "")
 }
