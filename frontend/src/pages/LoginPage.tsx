@@ -40,13 +40,17 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      await login({
+      const loggedUser = await login({
         email: formData.email,
         password: formData.password,
       })
 
-      // Login exitoso, redirigir a home
-      navigate('/')
+      // Si nunca verificó identidad, redirigir a verificación
+      if (!loggedUser.verification_status || loggedUser.verification_status === 'none') {
+        navigate('/verification')
+      } else {
+        navigate('/')
+      }
     } catch (err) {
       const errorMsg = getErrorMessage(err)
 

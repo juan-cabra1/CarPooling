@@ -260,6 +260,12 @@ services:
         VITE_SEARCH_API_URL: http://localhost:8004
     container_name: frontend
     restart: unless-stopped
+    environment:
+      PORT: 80
+      USERS_API_HOST: users-api
+      TRIPS_API_HOST: trips-api
+      BOOKINGS_API_HOST: bookings-api
+      SEARCH_API_HOST: search-api
     ports:
       - "3000:80"
     networks:
